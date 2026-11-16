@@ -1,0 +1,18 @@
+[theme]
+base = "dark"
+primaryColor = "#FFFFFF"
+backgroundColor = "#0A0A0B"
+secondaryBackgroundColor = "#121214"
+textColor = "#F4F4F5"
+font = "sans serif"
+
+[client]
+# Navigation is rendered by MNZ itself in the sidebar.
+showSidebarNavigation = false
+toolbarMode = "minimal"
+
+[server]
+headless = true
+address = "0.0.0.0"
+port = 8501
+enableCORS = false

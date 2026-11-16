@@ -1,0 +1,25 @@
+# MNZ MARKET INTELLIGENCE
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# Local runtime state (demo database and exports)
+mnz_data/
+*.db
+*.sqlite
+*.sqlite3
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Local preview server artifacts
+streamlit.log
+.streamlit.pid
+.smoke_*.py
+
+# Verification screenshots captured during development
+artifacts/
