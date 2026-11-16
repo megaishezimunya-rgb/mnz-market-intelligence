@@ -36,6 +36,21 @@ PAGES = [
     "Settings",
 ]
 
+PAGE_HEADINGS = {
+    "Overview": "Overview",
+    "Forex": "Forex Engine",
+    "Crypto": "Crypto Engine",
+    "Stocks": "Stocks Engine",
+    "Commodities": "Commodities Engine",
+    "Indices": "Indices Engine",
+    "AI Market Analyst": "AI Market Analyst",
+    "Strategy Testing": "Strategy Testing",
+    "Demo Trading": "Demo Trading",
+    "Trade History": "Trade History",
+    "Performance Reports": "Performance Reports",
+    "Settings": "Settings",
+}
+
 
 def _fixture_frame(symbol: str, bars: int = 420) -> pd.DataFrame:
     seed = zlib.crc32(symbol.encode()) & 0xFFFFFFFF
@@ -131,6 +146,9 @@ def test_page_renders_offline(offline_app, page):
     assert at.session_state["nav"] == page
     assert not at.exception, f"{page} raised: {at.exception}"
     assert at.markdown, f"{page} rendered no content"
+    rendered = "\n".join(str(element.value) for element in at.markdown)
+    heading = PAGE_HEADINGS[page]
+    assert f"<h1>{heading}</h1>" in rendered, f"{page} did not render its heading {heading!r}"
 
 
 def test_navigation_contains_every_page(offline_app):
