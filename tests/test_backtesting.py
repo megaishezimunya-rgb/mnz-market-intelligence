@@ -162,6 +162,38 @@ def test_long_window_does_not_emit_the_warmup_warning():
     assert not any("warm-up" in warning for warning in result.warnings)
 
 
+def test_short_window_fits_a_structure_instead_of_reporting_zero_trades():
+    frame = make_frame(n=300)  # less than twice the 200-bar slow MA
+    result = backtesting.run_backtest(
+        frame, settings(fast_ma=50, slow_ma=200, use_rsi_filter=True), symbol="TEST")
+    assert result.ok
+    assert result.fitted
+    assert result.settings.slow_ma < 200
+    assert result.settings.fast_ma < result.settings.slow_ma
+    assert any("fitted" in w for w in result.warnings)
+    assert any("warm-up" in w for w in result.warnings)
+
+
+def test_long_window_keeps_the_configured_structure():
+    frame = make_frame(n=900)
+    result = backtesting.run_backtest(
+        frame, settings(fast_ma=50, slow_ma=200, use_rsi_filter=True), symbol="TEST")
+    assert result.ok
+    assert not result.fitted
+    assert (result.settings.fast_ma, result.settings.slow_ma) == (50, 200)
+
+
+def test_compare_periods_labels_fitted_windows():
+    frame = make_frame(n=900)
+    table = backtesting.compare_periods(
+        frame, settings(fast_ma=50, slow_ma=200, use_rsi_filter=True), symbol="TEST", market="stocks")
+    twelve = table[table["Period"] == "Last 12 months"].iloc[0]
+    assert twelve["Trades"] is not None
+    assert "fitted" in twelve["Note"]
+    full = table[table["Period"] == "Full history"].iloc[0]
+    assert full["Note"] == ""
+
+
 def test_latest_signal_uses_the_armed_rsi_state(monkeypatch):
     close = 100 * 1.002 ** np.arange(120)
     frame = frame_from_close(close)

@@ -14,7 +14,7 @@ mechanics do not imply the same strategy across markets.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 import pandas as pd
@@ -71,6 +71,7 @@ class BacktestResult:
     bars: int = 0
     start: pd.Timestamp | None = None
     end: pd.Timestamp | None = None
+    fitted: bool = False  # True when a shorter MA structure was fitted to a short window
 
     @property
     def ok(self) -> bool:
@@ -135,6 +136,28 @@ def _rsi_long_state(rsi_series: pd.Series, settings: config.StrategySettings) ->
     return pd.Series(armed, index=rsi_series.index, dtype=bool)
 
 
+MIN_FITTED_BARS = 60
+
+
+def _fit_settings_to_history(settings: config.StrategySettings, bars: int):
+    """Fit MA lengths to a short window, or return ``(None, False)`` when no honest run fits.
+
+    A 50/200 structure on one year of daily bars leaves too few bars for the slow
+    MA to describe a trend. Rather than report a meaningless zero-trade run, the
+    same ratio is fitted to the available history — always flagged on the result so
+    the numbers are never presented as the configured defaults.
+    """
+    if bars >= settings.slow_ma * 2:
+        return settings, False
+    if bars < MIN_FITTED_BARS:
+        return None, False
+    slow = max(20, min(settings.slow_ma, bars // 3))
+    fast = max(2, min(settings.fast_ma, round(slow * settings.fast_ma / settings.slow_ma)))
+    if fast >= slow:
+        fast = max(2, slow // 3)
+    return replace(settings, fast_ma=int(fast), slow_ma=int(slow)), True
+
+
 def _empty_result(symbol: str, market: str, settings, initial: float, warning: str) -> BacktestResult:
     return BacktestResult(
         symbol=symbol, market=market, settings=settings, initial_balance=initial,
@@ -159,6 +182,13 @@ def run_backtest(
         return _empty_result(symbol, market, settings, initial_balance,
                              "No price data available for this instrument.")
     frame = _ensure_datetime_index(frame).dropna(subset=["Close"])
+    configured = settings
+    settings, fitted = _fit_settings_to_history(settings, len(frame))
+    if settings is None:
+        return _empty_result(
+            symbol, market, configured, initial_balance,
+            f"Not enough history: {len(frame)} bars available, {MIN_FITTED_BARS} needed to fit a structure.",
+        )
     min_bars = max(settings.slow_ma, settings.rsi_period) + 10
     if len(frame) < min_bars:
         return _empty_result(
@@ -189,12 +219,17 @@ def run_backtest(
     warn: list[str] = []
     if settings.use_rsi_filter is False:
         warn.append("The RSI entry filter is disabled for this run, so entries rely on trend alone.")
-    tested_bars = len(frame) - warmup
-    if tested_bars < settings.slow_ma:
+    if fitted:
         warn.append(
-            f"Only {tested_bars} bars remain after the {settings.slow_ma}-bar moving-average warm-up, "
-            f"so a {settings.fast_ma}/{settings.slow_ma} structure has little room to produce signals. "
-            "Test a longer history (2 years or more) for a meaningful read."
+            f"This {len(frame)}-bar window cannot support the configured "
+            f"{configured.fast_ma}/{configured.slow_ma} structure (its {configured.slow_ma}-bar warm-up "
+            f"would leave too little to trade), so the run fitted a {settings.fast_ma}/{settings.slow_ma} "
+            "structure to it. The figures describe that fitted structure, not your saved defaults."
+        )
+    elif len(frame) - warmup < settings.slow_ma:
+        warn.append(
+            f"Only {len(frame) - warmup} bars remain after the {settings.slow_ma}-bar moving-average "
+            "warm-up, so signals may be sparse. Test a longer history for a fuller read."
         )
 
     for i in range(warmup, len(frame)):
@@ -314,6 +349,7 @@ def run_backtest(
         symbol=symbol or "series",
         market=market,
         settings=settings,
+        fitted=fitted,
         initial_balance=float(initial_balance),
         final_equity=final_equity,
         equity_curve=equity_curve,
@@ -359,18 +395,21 @@ def compare_periods(
         ("Full history", None),
     ]
     rows = []
-    min_bars = max(settings.slow_ma, settings.rsi_period) + 10
     for label, offset in windows:
         subset = frame if offset is None else frame[frame.index >= end - offset]
-        if len(subset) < min_bars:
+        res = run_backtest(subset, settings, symbol=symbol, market=market,
+                           initial_balance=initial_balance, source=source, is_sample=is_sample)
+        if not res.ok:
             rows.append({
                 "Period": label, "Bars": len(subset), "Total return %": None,
                 "Buy & hold %": None, "Max drawdown %": None, "Win rate %": None,
-                "Trades": None, "Costs": None, "Note": f"insufficient history ({len(subset)} bars)",
+                "Trades": None, "Costs": None,
+                "Note": res.warnings[0] if res.warnings else f"insufficient history ({len(subset)} bars)",
             })
             continue
-        res = run_backtest(subset, settings, symbol=symbol, market=market,
-                           initial_balance=initial_balance, source=source, is_sample=is_sample)
+        note = f"fitted {res.settings.fast_ma}/{res.settings.slow_ma}" if res.fitted else ""
+        if is_sample:
+            note = f"sample · {note}" if note else "sample data"
         rows.append({
             "Period": label,
             "Bars": res.bars,
@@ -381,7 +420,7 @@ def compare_periods(
             "Win rate %": round(res.metrics["win_rate"], 1) if np.isfinite(res.metrics["win_rate"]) else None,
             "Trades": res.metrics["num_trades"],
             "Costs": round(res.metrics["total_costs"], 2),
-            "Note": "sample data" if is_sample else "",
+            "Note": note,
         })
     return pd.DataFrame(rows)
 

@@ -268,9 +268,12 @@ Strategy Testing runs the selected engine's own configuration against historical
 - entries on trend (fast MA above slow MA) with an optional RSI entry *state*: the filter
   arms when RSI falls below the entry ceiling and stays armed until RSI reaches the exit
   level, so a trend can be entered after the pullback even if RSI has drifted back up;
-- a warning when the tested window is shorter than the slow moving average after warm-up,
-  because a 50/200 structure on one year of daily bars leaves only a few dozen evaluable
-  bars (often none, which is reported honestly rather than filled);
+- automatic fitting for short windows: when fewer than two slow-MA lengths of history are
+  available, the run fits the same fast/slow ratio to the window (a 1-year EURUSD run uses
+  roughly 22/86), and says so in the result header, the warnings and the period comparison —
+  no prices are padded or estimated;
+- windows too short even to fit a structure (under 60 bars) are reported as insufficient;
+- saved results store the structure that actually ran;
 - exits on trend reversal, RSI extremity or an optional time stop;
 - bar-close fills, no intrabar look-ahead;
 - costs in basis points on entry and exit notional;
@@ -283,6 +286,9 @@ Strategy Testing runs the selected engine's own configuration against historical
 
 **Historical results do not guarantee future performance.** Backtests ignore financing,
 taxes, liquidity, intrabar stop execution and behavioural effects.
+
+GitHub Actions runs `python -m pytest -q` on every push and pull request
+(`.github/workflows/tests.yml`), installing `requirements.txt` on Python 3.12.
 
 ---
 
@@ -346,7 +352,35 @@ roadmap for the documented intent.
 
 ---
 
-## 11. Disclaimer
+## 11. Deploying to Streamlit Community Cloud
+
+The app is a long-running Streamlit server, so it needs a Python host — static hosting
+will not run it. Streamlit Community Cloud is the simplest free option:
+
+1. Commit the project and push it to a GitHub repository you have admin rights on
+   (public is simplest; private repositories work but only one private app is allowed).
+2. Sign in at [share.streamlit.io](https://share.streamlit.io) with GitHub.
+3. **Create app** → choose the repository and branch → main file `app.py` → advanced
+   settings → Python 3.12 → **Deploy**.
+4. No secrets are needed. The app never requests brokerage credentials or API keys, and
+   `requirements.txt` is installed automatically.
+
+What to expect from the hosted demo:
+
+- **The SQLite database resets on restart.** The filesystem is ephemeral, so
+  `mnz_data/mnz.db` is recreated whenever the app restarts, redeploys or wakes from
+  sleep. Simulated trades, saved backtests and setting changes return to the default
+  $10,000 demo account. Use a host with a persistent volume and set `MNZ_DB_PATH` if you
+  need that data to survive.
+- Apps sleep after 12 hours without traffic; the next visitor wakes the app.
+- There is **no authentication**: anyone with the URL can place simulated trades, reset
+  the demo account and edit settings. Share it accordingly.
+- GitHub Actions runs the test suite on every push once the repository is published
+  (see `.github/workflows/tests.yml`).
+
+---
+
+## 12. Disclaimer
 
 MNZ MARKET INTELLIGENCE is an educational, analytical research tool. Nothing in it is
 financial advice, an investment recommendation or a solicitation to trade. Trading carries
