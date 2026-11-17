@@ -44,11 +44,12 @@ _PERIOD_DAYS = {
 }
 _INTERVAL_MINUTES = {
     "1m": 1, "2m": 2, "5m": 5, "15m": 15, "30m": 30,
-    "60m": 60, "1h": 60, "90m": 90, "1d": 1440, "5d": 7200, "1wk": 10080, "1mo": 43200,
+    "60m": 60, "1h": 60, "90m": 90, "4h": 240,
+    "1d": 1440, "5d": 7200, "1wk": 10080, "1mo": 43200,
 }
 _SAMPLE_FREQ = {"1m": "min", "2m": "2min", "5m": "5min", "15m": "15min", "30m": "30min",
-                "60m": "h", "1h": "h", "90m": "90min", "1d": "D", "5d": "5D",
-                "1wk": "W", "1mo": "MS"}
+                "60m": "h", "1h": "h", "90m": "90min", "4h": "4h", "1d": "D",
+                "5d": "5D", "1wk": "W", "1mo": "MS"}
 
 
 # --------------------------------------------------------------------------- #
@@ -68,6 +69,7 @@ class PriceData:
     delayed: bool = True
     error: str | None = None
     notes: list[str] = field(default_factory=list)
+    timeframe: str = ""
 
     # -- basic state -------------------------------------------------------- #
     @property
@@ -107,7 +109,7 @@ class PriceData:
         age = self.age_minutes
         if age is None:
             return True
-        limit = config.STALE_BAR_MINUTES.get(self.interval, 4320)
+        limit = config.STALE_BAR_MINUTES.get(self.timeframe or self.interval, 4320)
         return age > limit
 
     @property
@@ -157,6 +159,79 @@ def _human_age(minutes: float) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# Connection monitor
+# --------------------------------------------------------------------------- #
+_PROVIDER_STATE: dict = {
+    "last_success_at": None,
+    "last_error": "",
+    "last_attempt_at": None,
+    "failures": 0,
+    "successes": 0,
+    "last_latency_ms": None,
+}
+_STATE_LOCK = threading.Lock()
+
+# Politeness controls: a minimum gap between provider calls and exponential
+# cooldown after repeated failures. This keeps the scanner from hammering the
+# provider and turning a temporary rate limit into a longer ban. Manual probes
+# (force_refresh=True) deliberately bypass the cooldown.
+_MIN_REQUEST_INTERVAL = 0.35
+_BACKOFF_BASE_SECONDS = 15.0
+_BACKOFF_MAX_SECONDS = 300.0
+_THROTTLE_LOCK = threading.Lock()
+_LAST_REQUEST_AT = 0.0
+_BACKOFF_UNTIL = 0.0
+_CONSECUTIVE_FAILURES = 0
+
+
+def _provider_gate(force: bool) -> str | None:
+    """Wait for the request slot, or return a cooldown message."""
+    global _LAST_REQUEST_AT
+    now = _time.monotonic()
+    with _THROTTLE_LOCK:
+        if not force and now < _BACKOFF_UNTIL:
+            remaining = int(_BACKOFF_UNTIL - now) + 1
+            return f"Provider cooling down after repeated failures (retry in ~{remaining}s)."
+        wait = _MIN_REQUEST_INTERVAL - (now - _LAST_REQUEST_AT)
+        if wait > 0:
+            _time.sleep(wait)
+        _LAST_REQUEST_AT = _time.monotonic()
+    return None
+
+
+def _note_fetch_result(ok: bool) -> None:
+    """Update the cooldown after a provider call."""
+    global _CONSECUTIVE_FAILURES, _BACKOFF_UNTIL
+    with _THROTTLE_LOCK:
+        if ok:
+            _CONSECUTIVE_FAILURES = 0
+            _BACKOFF_UNTIL = 0.0
+            return
+        _CONSECUTIVE_FAILURES += 1
+        if _CONSECUTIVE_FAILURES >= 2:
+            delay = min(_BACKOFF_BASE_SECONDS * (2 ** (_CONSECUTIVE_FAILURES - 2)),
+                        _BACKOFF_MAX_SECONDS)
+            _BACKOFF_UNTIL = _time.monotonic() + delay
+
+
+def connection_state() -> dict:
+    """Last observed provider health, for the dashboard and settings."""
+    with _STATE_LOCK:
+        return dict(_PROVIDER_STATE)
+
+
+def provider_connected() -> bool:
+    state = connection_state()
+    if not state.get("last_success_at"):
+        return False
+    try:
+        last = datetime.fromisoformat(state["last_success_at"])
+    except (TypeError, ValueError):
+        return False
+    return (config.utcnow() - last).total_seconds() < 900
+
+
+# --------------------------------------------------------------------------- #
 # Cache
 # --------------------------------------------------------------------------- #
 _CACHE: dict[tuple, tuple[float, PriceData]] = {}
@@ -202,7 +277,15 @@ def get_price_history(
         if hit and (_time.time() - hit[0]) < ttl:
             return hit[1]
 
-    data = _fetch_live(symbol, period, interval)
+    cooldown = _provider_gate(force_refresh)
+    if cooldown:
+        data = PriceData(
+            symbol=symbol, period=period, interval=interval, frame=_empty_frame(),
+            source=config.DATA_SOURCE_NAME, fetched_at=config.utcnow(), error=cooldown,
+        )
+    else:
+        data = _fetch_live(symbol, period, interval)
+        _note_fetch_result(data.ok)
     if not data.ok and allow_sample:
         primary_error = data.error or "provider returned no rows"
         data = _sample_data(symbol, period, interval)
@@ -211,6 +294,50 @@ def get_price_history(
     with _CACHE_LOCK:
         _CACHE[key] = (_time.time(), data)
     return data
+
+
+def get_timeframe_history(
+    symbol: str,
+    timeframe_label: str | None = None,
+    *,
+    allow_sample: bool | None = None,
+    force_refresh: bool = False,
+    ttl: int | None = None,
+) -> PriceData:
+    """Fetch history for a scanner timeframe (M1, M5 … D1).
+
+    H4 is aggregated from hourly provider bars; the returned ``interval`` says so.
+    """
+    tf = config.timeframe(timeframe_label)
+    data = get_price_history(
+        symbol, tf.period, tf.interval, allow_sample=allow_sample,
+        force_refresh=force_refresh, ttl=ttl,
+    )
+    if tf.resample and data.ok:
+        resampled = _resample(data.frame, tf.resample)
+        if not resampled.empty:
+            data = PriceData(
+                symbol=data.symbol, period=data.period, interval=tf.resample,
+                frame=resampled, source=data.source, fetched_at=data.fetched_at,
+                is_sample=data.is_sample, delayed=data.delayed, error=data.error,
+                notes=list(data.notes), timeframe=tf.label,
+            )
+    data.timeframe = tf.label
+    return data
+
+
+def ping(timeout_note: str = "") -> dict:
+    """Actively probe the provider with a tiny request (no sample fallback)."""
+    started = _time.perf_counter()
+    data = get_price_history("EURUSD=X", "5d", "1h", allow_sample=False, force_refresh=True)
+    elapsed_ms = int((_time.perf_counter() - started) * 1000)
+    return {
+        "ok": data.ok,
+        "latency_ms": elapsed_ms,
+        "error": data.error,
+        "bars": data.bars,
+        "note": timeout_note,
+    }
 
 
 def get_multiple(
@@ -232,10 +359,16 @@ def get_multiple(
 
 def provider_status() -> dict:
     """Report provider availability for the Settings / Overview screens."""
+    state = connection_state()
     return {
         "provider": config.DATA_SOURCE_NAME,
         "installed": YFINANCE_AVAILABLE,
-        "detail": "yfinance import failed: " + YFINANCE_IMPORT_ERROR if not YFINANCE_AVAILABLE else "Ready",
+        "connected": provider_connected(),
+        "detail": ("yfinance import failed: " + YFINANCE_IMPORT_ERROR)
+        if not YFINANCE_AVAILABLE else (state.get("last_error") or "Ready"),
+        "last_success_at": state.get("last_success_at"),
+        "last_latency_ms": state.get("last_latency_ms"),
+        "failures": state.get("failures", 0),
         "sample_fallback": config.ALLOW_SAMPLE_DATA_FALLBACK,
         "cache_ttl": config.DATA_CACHE_TTL_SECONDS,
     }
@@ -253,10 +386,15 @@ def _fetch_live(symbol: str, period: str, interval: str) -> PriceData:
             error="yfinance is not installed. Run: pip install -r requirements.txt",
         )
 
+    started = _time.perf_counter()
     try:
         ticker = yf.Ticker(symbol)
         raw = ticker.history(period=period, interval=interval, auto_adjust=False, actions=False)
     except Exception as exc:  # network, rate-limit, delisted symbol, provider change
+        with _STATE_LOCK:
+            _PROVIDER_STATE["last_error"] = _friendly_error(exc)
+            _PROVIDER_STATE["last_attempt_at"] = now.isoformat(timespec="seconds")
+            _PROVIDER_STATE["failures"] += 1
         return PriceData(
             symbol=symbol, period=period, interval=interval, frame=_empty_frame(),
             source=config.DATA_SOURCE_NAME, fetched_at=now,
@@ -265,15 +403,42 @@ def _fetch_live(symbol: str, period: str, interval: str) -> PriceData:
 
     frame = _normalise(raw)
     if frame.empty:
+        with _STATE_LOCK:
+            _PROVIDER_STATE["last_error"] = "No rows returned"
+            _PROVIDER_STATE["last_attempt_at"] = now.isoformat(timespec="seconds")
         return PriceData(
             symbol=symbol, period=period, interval=interval, frame=_empty_frame(),
             source=config.DATA_SOURCE_NAME, fetched_at=now,
             error="The provider returned no rows for this symbol, period or interval.",
         )
+    with _STATE_LOCK:
+        _PROVIDER_STATE["last_success_at"] = none_or_iso(now)
+        _PROVIDER_STATE["last_attempt_at"] = now.isoformat(timespec="seconds")
+        _PROVIDER_STATE["last_error"] = ""
+        _PROVIDER_STATE["successes"] += 1
+        _PROVIDER_STATE["failures"] = 0
+        _PROVIDER_STATE["last_latency_ms"] = int((_time.perf_counter() - started) * 1000)
     return PriceData(
         symbol=symbol, period=period, interval=interval, frame=frame,
         source=config.DATA_SOURCE_NAME, fetched_at=now, is_sample=False, delayed=True,
     )
+
+
+def none_or_iso(value: datetime) -> str:
+    return value.isoformat(timespec="seconds")
+
+
+def _resample(frame: pd.DataFrame, rule: str) -> pd.DataFrame:
+    """Aggregate OHLCV bars to a coarser rule (used for H4)."""
+    if frame is None or frame.empty:
+        return _empty_frame()
+    out = frame.resample(rule, label="right", closed="right").agg({
+        "Open": "first", "High": "max", "Low": "min",
+        "Close": "last", "Volume": "sum",
+    })
+    out = out.dropna(subset=["Close"])
+    out.index.name = "Date"
+    return out
 
 
 def _friendly_error(exc: Exception) -> str:

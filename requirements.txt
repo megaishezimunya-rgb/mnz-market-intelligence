@@ -4,3 +4,4 @@ numpy>=1.26,<3.0
 plotly>=5.20,<7.0
 yfinance>=0.2.40
 pytest>=8.0
+psycopg[binary,pool]>=3.2,<4.0

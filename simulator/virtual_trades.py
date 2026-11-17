@@ -34,6 +34,11 @@ class VirtualTrade:
     status: str = "open"
     notes: str = ""
     strategy: str = "manual"
+    tp: float | None = None
+    sl: float | None = None
+    slot: int | None = None
+    signal_id: int | None = None
+    timeframe: str = ""
 
     # -- construction ------------------------------------------------------- #
     @classmethod
@@ -54,6 +59,11 @@ class VirtualTrade:
             status=row.get("status", "open"),
             notes=row.get("notes") or "",
             strategy=row.get("strategy") or "manual",
+            tp=row.get("tp"),
+            sl=row.get("sl"),
+            slot=row.get("slot"),
+            signal_id=row.get("signal_id"),
+            timeframe=row.get("timeframe") or "",
         )
 
     # -- derived values ----------------------------------------------------- #
@@ -107,6 +117,10 @@ class VirtualTrade:
             "Entry time": self.entry_time.replace("T", " "),
             "Costs": round(self.costs, 2),
             "Strategy": self.strategy,
+            "TP": self.tp,
+            "SL": self.sl,
+            "Slot": self.slot,
+            "Timeframe": self.timeframe,
         }
         if self.is_open:
             row.update({

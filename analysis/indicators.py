@@ -91,6 +91,33 @@ def stochastic(frame: pd.DataFrame, period: int = 14, smooth: int = 3) -> pd.Ser
     return k.rolling(max(int(smooth), 1), min_periods=1).mean()
 
 
+def adx(frame: pd.DataFrame, period: int = 14) -> pd.DataFrame:
+    """Wilder's Average Directional Index with +DI and -DI.
+
+    ADX measures trend *strength* (not direction): readings above ~25 indicate a
+    trending market, below ~20 a range.
+    """
+    period = max(int(period), 2)
+    if frame is None or frame.empty or not {"High", "Low", "Close"} <= set(frame.columns):
+        return pd.DataFrame(columns=["adx", "plus_di", "minus_di"])
+    high, low = frame["High"].astype(float), frame["Low"].astype(float)
+    up_move = high.diff()
+    down_move = -low.diff()
+    plus_dm = pd.Series(
+        np.where((up_move > down_move) & (up_move > 0), up_move, 0.0), index=frame.index
+    )
+    minus_dm = pd.Series(
+        np.where((down_move > up_move) & (down_move > 0), down_move, 0.0), index=frame.index
+    )
+    atr_series = true_range(frame).ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+    atr_safe = atr_series.replace(0.0, np.nan)
+    plus_di = 100 * plus_dm.ewm(alpha=1 / period, adjust=False, min_periods=period).mean() / atr_safe
+    minus_di = 100 * minus_dm.ewm(alpha=1 / period, adjust=False, min_periods=period).mean() / atr_safe
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0.0, np.nan)
+    adx_series = dx.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+    return pd.DataFrame({"adx": adx_series, "plus_di": plus_di, "minus_di": minus_di})
+
+
 def roc(series: pd.Series, period: int = 20) -> pd.Series:
     """Rate of change in percent."""
     shifted = series.shift(max(int(period), 1))
@@ -170,6 +197,9 @@ class IndicatorSnapshot:
     atr: float = float("nan")
     atr_pct: float = float("nan")
     bb_width: float = float("nan")
+    adx: float = float("nan")
+    plus_di: float = float("nan")
+    minus_di: float = float("nan")
     volume_ratio: float = float("nan")
     roc_20: float = float("nan")
     return_5: float = float("nan")
@@ -186,6 +216,18 @@ class IndicatorSnapshot:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+    @property
+    def adx_state(self) -> str:
+        if not np.isfinite(self.adx):
+            return "Unavailable"
+        if self.adx >= 40:
+            return f"Very strong trend ({self.adx:.1f})"
+        if self.adx >= 25:
+            return f"Trending ({self.adx:.1f})"
+        if self.adx >= 20:
+            return f"Weak trend ({self.adx:.1f})"
+        return f"Range / no trend ({self.adx:.1f})"
 
     @property
     def macd_state(self) -> str:
@@ -325,6 +367,11 @@ def snapshot(
     )
 
     snap.bb_width = _last(bollinger(close)["width"]) * 100 if snap.bars >= 20 else float("nan")
+    adx_frame = adx(frame, rsi_period)
+    if not adx_frame.empty:
+        snap.adx = _last(adx_frame["adx"])
+        snap.plus_di = _last(adx_frame["plus_di"])
+        snap.minus_di = _last(adx_frame["minus_di"])
     snap.volume_ratio = _volume_ratio(frame)
     snap.roc_20 = _last(roc(close, 20))
     snap.return_5 = float((close.iloc[-1] / close.iloc[-6] - 1) * 100) if snap.bars > 6 else float("nan")

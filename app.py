@@ -1,34 +1,25 @@
-"""MNZ MARKET INTELLIGENCE — application entry point.
+"""MNZ BOT — application entry point.
 
 Run with:
     streamlit run app.py
 
-VERSION ONE IS DEMO-ONLY: virtual money, simulated trades, no broker, no live
-orders and no credentials of any kind.
+Signed-out visitors see the public website (website.py). Signed-in users get the
+six-section application: Home, Markets, Signals, Demo, MNZ AI, Settings.
+
+DEMO-ONLY: virtual money, simulated positions, no broker and no live orders.
 """
 
 from __future__ import annotations
+
+from html import escape
 
 import streamlit as st
 
 import config
 import state
 import ui
-from data import market_data
-from pages import (
-    analyst_page,
-    commodities_page,
-    crypto_page,
-    demo_trading,
-    forex_page,
-    indices_page,
-    overview,
-    reports,
-    settings,
-    stocks_page,
-    strategy_testing,
-    trade_history,
-)
+from pages import ai_page, demo_page, home, markets, settings_page, signals_page
+from website import render as render_website
 
 st.set_page_config(
     page_title=config.APP_NAME,
@@ -38,45 +29,95 @@ st.set_page_config(
 )
 
 ui.inject_theme()
-state.init_state()
+state.bootstrap()
+
+# --------------------------------------------------------------------------- #
+# Public website (signed out)
+# --------------------------------------------------------------------------- #
+if state.current_user() is None:
+    render_website()
+    st.stop()
+
+state.apply_pending_navigation()
 
 PAGE_RENDERERS = {
-    "Overview": overview.render,
-    "Forex": forex_page.render,
-    "Crypto": crypto_page.render,
-    "Stocks": stocks_page.render,
-    "Commodities": commodities_page.render,
-    "Indices": indices_page.render,
-    "AI Market Analyst": analyst_page.render,
-    "Strategy Testing": strategy_testing.render,
-    "Demo Trading": demo_trading.render,
-    "Trade History": trade_history.render,
-    "Performance Reports": reports.render,
-    "Settings": settings.render,
+    "Home": home.render,
+    "Markets": markets.render,
+    "Signals": signals_page.render,
+    "Demo": demo_page.render,
+    "MNZ AI": ai_page.render,
+    "Settings": settings_page.render,
+}
+
+MOBILE_LABELS = {
+    "Home": "Home",
+    "Markets": "Markets",
+    "Signals": "Signals",
+    "Demo": "Demo",
+    "MNZ AI": "AI",
+    "Settings": "Settings",
 }
 
 
-def _sidebar() -> str:
+# --------------------------------------------------------------------------- #
+# Desktop sidebar
+# --------------------------------------------------------------------------- #
+def render_sidebar() -> str:
+    current = state.current_page()
+    # Keep the radio widget in sync when navigation came from a button.
+    if st.session_state.get("nav_radio") != current:
+        st.session_state["nav_radio"] = current
+
     with st.sidebar:
         ui.brand_logo()
-        st.markdown('<div class="mnz-nav-caption">Navigation</div>', unsafe_allow_html=True)
+        st.markdown('<div class="mnz-nav-caption">Workspace</div>', unsafe_allow_html=True)
         selection = st.radio(
-            "Navigation", state.NAV_ITEMS, key="nav", label_visibility="collapsed",
+            "Navigation", config.NAV_ITEMS, key="nav_radio",
+            label_visibility="collapsed",
         )
-        provider = market_data.provider_status()
-        feed = "Yahoo Finance · delayed" if provider["installed"] else "yfinance not installed"
+
+        user = state.current_user() or {}
+        account = state.get_account()
+        unread = state.get_database().unread_alert_count(int(user["id"]))
         st.markdown(
             f'<div class="mnz-sidebar-foot">'
-            f"<strong>DEMO MODE</strong><br>Virtual money only. No broker connection, no live orders.<br><br>"
-            f"<strong>DATA FEED</strong><br>{feed}<br><br>"
-            f"<strong>{config.BRAND}</strong> · v{config.VERSION}<br>"
-            f"Educational analysis, not financial advice."
+            f"<strong>{escape(str(user.get('name', '')))}</strong><br>"
+            f"{escape(str(user.get('email', '')))}<br><br>"
+            f"<strong>DEMO</strong><br>Virtual cash {ui.money(account.cash)}<br>"
+            f"{unread} unread alert(s)<br><br>"
+            f"<strong>DATA</strong><br>{config.DATA_SOURCE_NAME}<br><br>"
+            f"{config.BRAND} · v{config.VERSION}<br>"
+            "Educational analysis, not financial advice."
             f"</div>",
             unsafe_allow_html=True,
         )
+        if st.button("Sign out", key="sidebar_signout", type="secondary"):
+            state.logout()
+            st.rerun()
     return selection
 
 
-selection = _sidebar()
+# --------------------------------------------------------------------------- #
+# Mobile bottom navigation (hidden on desktop by CSS)
+# --------------------------------------------------------------------------- #
+def render_mobile_nav(current: str) -> None:
+    with st.container(key="mobile_nav"):
+        row = st.container(horizontal=True, horizontal_alignment="distribute", gap="small")
+        for item in config.NAV_ITEMS:
+            active = item == current
+            if row.button(
+                MOBILE_LABELS[item], key=f"mnav_{item}",
+                type="primary" if active else "secondary",
+                width="stretch",
+            ):
+                st.session_state["mnz_page"] = item
+                st.rerun()
+
+
+# --------------------------------------------------------------------------- #
+# Render
+# --------------------------------------------------------------------------- #
+page = render_sidebar()
+render_mobile_nav(page)
 ui.pop_flash()
-PAGE_RENDERERS[selection]()
+PAGE_RENDERERS[page]()

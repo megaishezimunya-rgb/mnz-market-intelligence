@@ -1,388 +1,315 @@
-# MNZ MARKET INTELLIGENCE
+# MNZ BOT
 
-A premium, multi-market analysis platform built with Python, Streamlit, Pandas, Plotly,
-SQLite and free historical market data.
+A premium, responsive multi-market **analysis, scanning and simulation** platform built with
+Python, Streamlit, Pandas, Plotly, and SQLite locally or PostgreSQL when `DATABASE_URL` is set.
 
-**Version 1 is DEMO-ONLY.** Every trade is simulated with virtual money. The application
-has no broker connection, no order routing, no API trading keys and never asks for
-brokerage or financial-account credentials. The automated execution module is disabled and
-unimplemented by design.
+Version 2.0 upgrades the existing MNZ Market Intelligence app in place — same project, same
+Streamlit entry point, same deployment model — into a six-section product with accounts,
+persistent signals, a continuous scanner, a $100 simulated account and a grounded assistant.
 
----
-
-## 1. What it does
-
-MNZ analyses five separate markets, each with **its own engine, settings and strategy
-configuration** — one strategy is not assumed to work equally well everywhere:
-
-| Engine | Coverage | Default strategy character |
-|---|---|---|
-| **Forex** | 10 major and cross pairs | 50/200 trend following, 2 bps simulated cost, long-only, 50% size |
-| **Crypto** | BTC, ETH, SOL, XRP, ADA, AVAX, LINK, DOGE | 21/100 trend following, no RSI entry filter, 15 bps cost, 50% size |
-| **Stocks** | 12 large-cap equities with provider fundamentals | 50/200 trend following with RSI filter, 5 bps cost, 100% size |
-| **Commodities** | Gold, silver, WTI, Brent, copper, gas, corn, wheat | 40/150 trend following, shorts enabled, 6 bps cost, 60% size |
-| **Indices** | 10 global benchmarks with proxy breadth | 50/200 trend following, 3 bps cost, 100% size |
-
-Each engine provides:
-
-- moving averages, RSI, MACD, trend classification and momentum scoring;
-- ATR-based volatility monitoring and volume analysis;
-- engine-specific context — FX/commodity session timing, crypto 24/7 notes, stock
-  fundamentals and earnings awareness, commodity supply/demand background, index breadth;
-- its own editable strategy settings, used by the analysis, the strategy state and backtests.
-
-### Navigation (12 sections, all functional)
-
-1. **Overview** — market selection, data availability, selected instruments, trends,
-   analysis summaries, virtual balance and demo performance.
-2. **Forex** — pair analysis, sessions, scheduled event awareness.
-3. **Crypto** — trend, momentum, volatility, volume, 24/7 context.
-4. **Stocks** — ticker search, price analysis, fundamentals, earnings.
-5. **Commodities** — trend, volatility, supply/demand context, events.
-6. **Indices** — trend, momentum, volatility, proxy market breadth.
-7. **AI Market Analyst** — plain-language summaries, indicator readings, BUY/SELL/WAIT
-   educational labels, weighted reasoning, data provenance, cross-market view.
-8. **Strategy Testing** — per-engine backtests with costs, win rate, return, drawdown,
-   trade count and comparison across market periods.
-9. **Demo Trading** — virtual entries/exits, simulated costs, open/closed positions, P&L,
-   maximum drawdown, equity curve.
-10. **Trade History** — filtered simulated trade log with CSV export.
-11. **Performance Reports** — equity curve, drawdown, monthly returns, engine breakdown,
-    trade statistics, saved backtests, CSV exports.
-12. **Settings** — demo account, per-engine strategies, data provider, safety and roadmap.
+> **DEMO ONLY.** Every balance, position and result is virtual. MNZ has no broker connection,
+> no order routing, no API trading keys and never asks for brokerage credentials. Automated
+> execution is disabled in code. Nothing here is financial advice.
 
 ---
 
-## 2. Project structure
+## 1. What is in this build
 
-```
-mnz_market_intelligence/
-├── app.py                     Streamlit entry point and sidebar navigation
-├── config.py                  Brand, palette, universes, per-engine defaults, safety flags
-├── state.py                   Session state, settings persistence, navigation helpers
-├── ui.py                      Theme (CSS), Plotly template, charts and components
-├── requirements.txt
-├── README.md
-├── conftest.py
-├── .streamlit/
-│   └── config.toml            Dark theme, custom navigation enabled
-├── engines/
-│   ├── base.py                Engine interface, sessions, shared formatting
-│   ├── forex.py               Sessions, pair focus, recurring event windows
-│   ├── crypto.py              24/7 market notes, volatility monitoring
-│   ├── stocks.py              Provider fundamentals, earnings calendar, ticker search
-│   ├── commodities.py         Supply/demand context, futures roll caveats
-│   └── indices.py             Global indices, proxy market breadth
-├── analysis/
-│   ├── indicators.py          SMA, EMA, RSI, MACD, ATR, Bollinger, drawdown, snapshots
-│   ├── market_analyst.py      Weighted, explainable BUY/SELL/WAIT analysis
-│   └── backtesting.py         Strategy backtests, period comparison, latest signal
-├── data/
-│   └── market_data.py         yfinance access, normalisation, caching, sample fallback
-├── database/
-│   └── database.py            SQLite schema and queries (accounts, trades, snapshots…)
-├── simulator/
-│   ├── demo_account.py        Virtual cash, P&L accounting, drawdown, reset
-│   ├── virtual_trades.py      Trade model, mark-to-market, validation
-│   └── portfolio.py           Equity curve, allocation, monthly returns, statistics
-├── pages/
-│   ├── engine_common.py       Shared engine page flow, strategy form
-│   ├── overview.py, forex_page.py, crypto_page.py, stocks_page.py,
-│   ├── commodities_page.py, indices_page.py, analyst_page.py,
-│   ├── strategy_testing.py, demo_trading.py, trade_history.py,
-│   └── reports.py, settings.py
-├── tests/
-│   ├── test_indicators.py
-│   ├── test_backtesting.py
-│   ├── test_simulator.py
-│   └── test_analyst_engines.py
-└── mnz_data/                  Created at first run: mnz.db (SQLite) — git-ignored
-```
+Signed-out visitors see the **public website** (Home, Features, Platform Compatibility, How It
+Works, Pricing, Academy, Support, Login, Register). Signed-in users get six sections:
+
+| Section | Contents |
+|---|---|
+| **Home** | Scanner status, monitored categories, latest signals, demo equity, open simulated positions, unread alerts, connection health, upcoming event windows |
+| **Markets** | Scanner (Scan one / Scan all / continuous Start–Pause–Resume–Stop), interactive charts, RSI/MACD/EMA/SMA/Bollinger/ATR/ADX, Strategy Lab (backtests, period comparison, market comparison), Conditions monitor, Economic calendar |
+| **Signals** | Signal Centre, full history with date/instrument/direction filters, measured TP/SL outcomes, performance, Smart Alerts and alert history |
+| **Demo** | $100 virtual account, 1/3/5 slots, TP/SL auto-exits, open/closed positions, journal, Performance Centre |
+| **MNZ AI** | Grounded assistant with Beginner/Professional modes over the loaded instrument, stored signal, indicators, demo state and scan conditions |
+| **Settings** | Profile, notifications, display, demo Safety Guard, Help Centre, platform compatibility, data connection and account controls |
+
+### Preserved from version 1
+
+- SQLite persistence for accounts, simulated trades and equity snapshots, with optional PostgreSQL.
+- Indicator library (SMA, EMA, RSI, MACD, ATR, Bollinger, stochastic, ROC, drawdown).
+- Explainable, rule-based market analyst and per-market strategy defaults.
+- Backtesting engine with costs, fitted structures for short windows, and period comparison.
+- Demo accounting model and portfolio analytics.
+- Delayed Yahoo Finance feed with explicit source, timestamp and quality labelling.
+
+### Added or rebuilt in version 2
+
+- Local authentication (PBKDF2-SHA256, hashed session tokens, URL-restored sessions) and
+  per-user isolation for accounts, signals, alerts, journal and settings.
+- Brand and layout rebuild: `#090B0F` background, `#151922` cards, `#20D68A` / `#F04452`
+  indicators, desktop collapsible sidebar, phone bottom navigation.
+- Signal engine with quality score, ATR-based simulated TP/SL, first-touch outcome measurement
+  and WAIT gating for stale or sample data.
+- Continuous scanner using Streamlit fragments with real start/pause/resume/stop state.
+- Smart Alerts with thresholds, daily cap, deduplication per bar, and saved history.
+- Signals, alerts, journal, equity snapshots and per-user settings persisted (SQLite or PostgreSQL).
+- Public website with honest pricing, compatibility and academy pages.
+- ADX and +DI/−DI, H4 aggregation, M1–D1 timeframe mapping.
+- Mnz Safety Guard and Market Conditions monitor.
+- 90 automated tests (see §7).
 
 ---
 
-## 3. Windows installation
+## 2. Markets and data honesty
 
-Tested with Python 3.12 on Windows 10/11. Python 3.10 or newer is required.
+Available from the connected **Yahoo Finance** feed:
 
-### Step 1 — Install Python
+- **Forex** — 10 majors and crosses.
+- **Global Indices** — including **US30** (`^DJI`), S&P 500, Nasdaq 100, FTSE, DAX, Euro Stoxx,
+  Nikkei, Hang Seng, ASX 200, Sensex.
+- **Stocks** — 12 large-cap US equities.
+- **Commodities** — gold, silver, WTI, Brent, copper, gas, corn, wheat.
+- **Crypto** — BTC, ETH, SOL, XRP, ADA, AVAX, LINK, DOGE.
 
-1. Download Python from <https://www.python.org/downloads/windows/> (64-bit installer).
-2. During installation, tick **“Add python.exe to PATH”**.
-3. Open **PowerShell** (Start → “PowerShell”) and verify:
+**Synthetic indices** are a Deriv product. No Deriv connection is configured, so those
+instruments are listed as *awaiting a data connection* and no prices are shown or invented.
 
-```powershell
-python --version
-```
+Timeframes: **M1, M5, M15, M30, H1, H4, D1**. H4 is aggregated from hourly provider bars and
+labelled as such. Intraday history is provider-limited.
 
-You should see something like `Python 3.12.x`. If `python` is not recognised, close and
-reopen PowerShell, or reinstall Python with the PATH option enabled.
+Rules the app enforces:
 
-### Step 2 — Open the project folder
-
-```powershell
-cd "C:\path\to\mnz_market_intelligence"
-```
-
-If your folder contains `app.py` at the top level, you are in the right place.
-
-### Step 3 — Create and activate a virtual environment
-
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-```
-
-If PowerShell blocks activation with an execution-policy error, either run the command
-below (current user only) or use Command Prompt instead:
-
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
-```
-
-Command Prompt alternative:
-
-```bat
-.venv\Scripts\activate.bat
-```
-
-Your prompt should now begin with `(.venv)`.
-
-### Step 4 — Install dependencies
-
-```powershell
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-```
-
-This installs Streamlit, Pandas, NumPy, Plotly, yfinance and pytest. Installation can take
-a few minutes on the first run.
-
-### Step 5 — Launch the application
-
-```powershell
-python -m streamlit run app.py
-```
-
-(`python -m streamlit ...` avoids PATH problems with the `streamlit` launcher.)
-
-Streamlit prints a local URL, normally:
-
-```
-Local URL: http://localhost:8501
-```
-
-Open it in your browser. To use a different port:
-
-```powershell
-python -m streamlit run app.py --server.port 8600
-```
-
-Stop the server with `Ctrl+C` in the PowerShell window.
-
-### Step 6 — Optional: run the tests
-
-```powershell
-python -m pytest -q
-```
+- Every chart shows source, interval, bar count, last-bar timestamp and freshness.
+- Missing data produces an explicit message, never an estimate.
+- Offline sample data is **opt-in**, watermarked, capped at quality 30 and can never produce
+  BUY or SELL.
+- Stale bars cannot produce a directional signal.
 
 ---
 
-## 4. First-run behaviour and data honesty
+## 3. Signals, quality and Safety Guard
 
-Market data comes from **Yahoo Finance through yfinance** — a free, delayed feed. Prices may
-lag by 15–20 minutes, intraday history is limited, and some symbols or periods return
-nothing.
+Direction is a weighted combination of trend structure, MACD momentum, RSI and market
+structure, with per-market weights:
 
-MNZ never invents live prices. Specifically:
+```
+score = Σ weight × component          clipped to [-1, +1]
+BUY  ≥ +0.28      SELL ≤ −0.28      otherwise WAIT
+```
 
-- Every chart and table shows its **source, interval, bar count and last-bar timestamp**.
-- Missing data produces an explicit error message, and the instrument is excluded from
-  analysis rather than estimated.
-- If the provider cannot be reached and **“Allow clearly-labelled offline sample data”** is
-  enabled (Settings → Data & provider), the app generates a deterministic synthetic series
-  so the interface remains explorable. Those rows are labelled **SAMPLE DATA** on the chart
-  watermark, in the source line, in the analyst report and in the data-quality column.
-  Sample data means nothing for real markets.
-- Turn the fallback off to see strict error handling instead.
+- **Entry reference** is the last verified close.
+- **Simulated SL** is 1.5 × ATR from entry; **TP** is 2.6 × ATR.
+- **Quality (0–100)** combines component agreement, signal magnitude, bar count, volatility
+  regime and freshness. Sample data caps quality at 30.
+- **Strength** is Strong / Moderate / Weak from quality and magnitude.
+- **Outcomes** are measured later against actual subsequent bars (first touch of TP or SL).
+  A bar that touches both is reported as ambiguous/unresolved rather than guessed.
+- **Safety Guard** shows pass/blocked checks for provider response, real-data status,
+  freshness, simulated-only levels and quality.
 
-Economic-event information is **awareness, not a live calendar**: MNZ lists recurring
-release windows (for example US non-farm payrolls on the first Friday, ~13:30 UTC) and says
-so wherever they appear. Confirm times with an official calendar.
-
----
-
-## 5. AI Market Analyst — how the labels are produced
-
-The analyst is a transparent rule system, not a language model and not advice.
-
-1. Each engine computes indicators from the last bars: trend structure (MA alignment and
-   price location), MACD momentum, RSI, volume versus its 50-bar average, ATR volatility.
-2. Direction components are weighted **per engine** (see Settings → Engine strategies, or
-   the weight table on the AI Market Analyst page). Volatility and session liquidity adjust
-   conviction rather than direction.
-3. The weighted score is clipped to `[-1, +1]`:
-   - `≥ +0.25` → **BUY BIAS**
-   - `≤ −0.25` → **SELL BIAS**
-   - otherwise → **WAIT**
-   - fewer than 210 bars → **NO DATA**
-4. Conviction combines score strength, component agreement, volatility and **data quality**
-   (current < delayed < sample). Sample data caps conviction near 40%; it cannot be 100%.
-5. The page always states why: component scores and weights, plain-language sentences,
-   indicator readings, cautions, source, timestamp and any stale/missing data.
-
-These labels are educational. They are not financial advice, not a recommendation and do
-not consider your circumstances.
+Alerts are created only for new directional signals that meet the user's strength and quality
+thresholds, from current data, capped per day and deduplicated per bar.
 
 ---
 
-## 6. Demo trading simulator
+## 4. Demo trading model
 
-- Starting virtual balance: **$10,000** (configurable in Settings; changing it resets the
-  demo account).
-- Long or short, fractional quantities, manual entry and exit prices defaulting to the
-  latest available close.
-- Simulated transaction costs in basis points, charged on **both** entry and exit.
-- Virtual P&L, win rate, profit factor, holding period and maximum drawdown from recorded
-  equity snapshots.
-- Open and closed positions, complete trade history, CSV exports.
+- Starting virtual balance: **$100**.
+- Slots: **1, 3 or 5** open positions. A slot is occupied only after a position is created.
+- Entries come from a stored signal (side, entry, TP, SL pre-filled) or manual what-if entry.
+- Quantity suggestion: `equity × risk% ÷ |entry − stop|`, capped at 10× equity notional.
+- Simulated costs in basis points on entry and exit.
+- TP/SL are checked against the latest delayed price when the Demo page is opened.
 
-Accounting model (documented so the numbers are auditable):
+Accounting (auditable):
 
 ```
 cash     = starting balance − entry costs + realised gross P&L − exit costs
-equity   = cash + unrealised gross P&L of open positions
+equity   = cash + unrealised gross P&L
 realised = Σ (gross P&L − entry cost − exit cost) for closed trades
 ```
 
-Notional is never deducted from cash — this is a notional demo, not a margin model, so the
-simulator caps notional at 10× virtual equity. Nothing is sent anywhere: trades live only
-in `mnz_data/mnz.db`.
+Every balance, position and result is labelled DEMO.
 
 ---
 
-## 7. Backtesting
+## 5. Authentication and storage
 
-Strategy Testing runs the selected engine's own configuration against historical bars:
+- Email + password accounts, PBKDF2-HMAC-SHA256 (210,000 iterations, per-user salt).
+- Session tokens are random, stored only as SHA-256 hashes with a 30-day expiry, and restored
+  from the URL so a browser refresh keeps you signed in. Signing out deletes the session.
+- All user data is scoped by `user_id` or `account_id`:
+  - `users`, `sessions`, `accounts`, `trades`, `equity_snapshots`
+  - `signals`, `alerts`, `journal`, `user_settings`, `backtest_runs`
+  - `delivery_attempts` (outbound Telegram outcomes, survives restarts)
 
-- entries on trend (fast MA above slow MA) with an optional RSI entry *state*: the filter
-  arms when RSI falls below the entry ceiling and stays armed until RSI reaches the exit
-  level, so a trend can be entered after the pullback even if RSI has drifted back up;
-- automatic fitting for short windows: when fewer than two slow-MA lengths of history are
-  available, the run fits the same fast/slow ratio to the window (a 1-year EURUSD run uses
-  roughly 22/86), and says so in the result header, the warnings and the period comparison —
-  no prices are padded or estimated;
-- windows too short even to fit a structure (under 60 bars) are reported as insufficient;
-- saved results store the structure that actually ran;
-- exits on trend reversal, RSI extremity or an optional time stop;
-- bar-close fills, no intrabar look-ahead;
-- costs in basis points on entry and exit notional;
-- results: total simulated return, buy & hold comparison, maximum drawdown, win rate,
-  number of trades, total costs, profit factor, exposure, annualised return and bar-return
-  Sharpe;
-- comparison across the last 3 months, 12 months, 3 years, 5 years and full history —
-  windows with insufficient warm-up are reported as insufficient instead of filled;
-- downloadable trade list and saved runs (visible in Performance Reports).
+Repository: `database/database.py`. Runtime database: `mnz_data/mnz.db` (git-ignored).
 
-**Historical results do not guarantee future performance.** Backtests ignore financing,
-taxes, liquidity, intrabar stop execution and behavioural effects.
+### Durable storage (important for real users)
 
-GitHub Actions runs `python -m pytest -q` on every push and pull request
-(`.github/workflows/tests.yml`), installing `requirements.txt` on Python 3.12.
+On Streamlit Community Cloud the filesystem is ephemeral: a restart or redeploy recreates the
+SQLite file, so accounts, demo positions and delivery history reset. The app uses SQLite by
+default and automatically switches to PostgreSQL when a `DATABASE_URL` is present — no code
+change and no extra flag.
+
+**PostgreSQL (recommended on Streamlit Cloud).** Create a free database at a managed provider
+(Neon, Supabase, Railway, Render), copy its connection string, and add it in
+**App → Settings → Secrets**:
+
+```toml
+DATABASE_URL = "postgresql://user:password@host/dbname?sslmode=require"
+```
+
+Root-level Streamlit secrets are exported as environment variables, which is how the app reads
+it. Reboot the app; the schema, indexes and constraints are created on first connection, and
+Settings → Help Centre → Account and data shows **PostgreSQL (durable)**. `postgres://` URLs are
+normalised to `postgresql://`, and TLS is controlled by the provider's `sslmode` parameter.
+
+Data already in a local SQLite file is **not** moved automatically. Carry it over once, from a
+machine that still has the file (Streamlit's container loses it on restart), before you switch
+the deployment:
+
+```bash
+DATABASE_URL="postgresql://..." python -m database.migrate --sqlite mnz_data/mnz.db
+```
+
+The migration refuses a non-empty target, copies every table in a single transaction (all or
+nothing), preserves row ids, advances the id sequences and verifies row counts. Run it once,
+then set the same `DATABASE_URL` in Secrets and redeploy. Running it again is refused because
+the target already has data.
+
+**SQLite fallback.** With no `DATABASE_URL`, the app keeps using SQLite at `MNZ_DB_PATH`
+(default `mnz_data/mnz.db`). On a host with a persistent volume that is also durable:
+
+```bash
+MNZ_DB_PATH=/data/mnz.db
+```
+
+SQLite data survives a *rerun* (page refresh, session restart); it does not survive a container
+restart on an ephemeral host. Back up either backend on a schedule — for SQLite,
+`sqlite3 mnz.db ".backup backup.db"` is safe while the app is running.
+
+The PostgreSQL driver is `psycopg` 3 with a small connection pool (at most four connections per
+process). All queries live in `database/database.py`; the public `Database` interface is
+identical for both backends, so the rest of the app and the test suite are unchanged.
 
 ---
 
-## 8. Configuration
+## 6. Run locally
 
-Most defaults live in `config.py`:
+Python 3.10+ (tested on 3.12).
 
-| Setting | Purpose |
+```bash
+python -m venv .venv
+source .venv/bin/activate         # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+Open <http://localhost:8501>, choose **Register**, and create an account. No secrets or API keys
+are required.
+
+Optional environment variables:
+
+| Variable | Purpose |
 |---|---|
-| `INSTRUMENTS` | Instrument universes per engine |
-| `ENGINE_STRATEGY_DEFAULTS` | Each engine's own moving averages, RSI, cost and size defaults |
-| `ANALYST_WEIGHTS` | Per-engine weighting of analytical components |
-| `TIMEFRAMES` | Period/interval choices (1 month 5m → maximum weekly) |
-| `DEMO_STARTING_BALANCE` | Default virtual starting balance |
-| `ALLOW_SAMPLE_DATA_FALLBACK` | Default for the offline sample-data toggle |
-| `DATA_CACHE_TTL_SECONDS` | Provider cache lifetime |
+| `DATABASE_URL` | Optional PostgreSQL connection string; enables durable storage |
+| `MNZ_DB_PATH` | SQLite file location when `DATABASE_URL` is not set |
+| `MNZ_CACHE_TTL` | Provider cache lifetime in seconds (default 300) |
+| `MNZ_TELEGRAM_BOT_TOKEN` | Optional. Bot token for outbound Smart Alert delivery |
+| `MNZ_TELEGRAM_CHAT_ID` | Optional. Destination chat id for Telegram delivery |
 
-Environment variables (optional):
-
-- `MNZ_DB_PATH` — override the SQLite file location.
-- `MNZ_CACHE_TTL` — override the cache lifetime in seconds.
-
-Safety flags are hard-coded in `config.py`: `DEMO_ONLY = True`, `LIVE_EXECUTION_ENABLED =
-False`, `BROKER_INTEGRATION_ENABLED = False`. There is no broker code anywhere in the
-project.
+Telegram delivery is off until BOTH variables are set (on Streamlit Cloud: App → Settings →
+Secrets). The in-app alert is always saved first, and sending happens on a background worker
+with a bounded queue — a slow Bot API call never delays a scan. Settings → Notifications shows
+the last delivery attempt, whether it succeeded, the error if it failed, the sent/failed counts
+and the current queue depth, so a delivery problem is visible instead of silent. A **Send test
+message** button queues a real message through the same background sender and reports the
+outcome, including "not configured" when the server has no credentials. Every attempt is written
+to the `delivery_attempts` table and the last eight for the signed-in account are listed in
+Settings, so failures remain visible after a restart (the live counters reset with the process).
+Only the newest 50 attempts per account are kept; older rows are pruned on each insert.
 
 ---
 
-## 9. Troubleshooting
+## 7. Tests
 
-| Symptom | Explanation and fix |
+```bash
+python -m pytest -q
+```
+
+Current suite: **116 tests** (114 run by default; the two live PostgreSQL tests are skipped
+unless `MNZ_TEST_DATABASE_URL` is set), covering indicators, backtesting, simulator accounting, engine
+analyst, authentication and data isolation, signal labels/quality/targets/outcomes, scanner
+persistence and alert gating, demo slots and TP/SL, AI grounding, expectancy/breakdowns, stale
+position cleanup, provider cooldown, backend selection and SQL translation, non-blocking
+Telegram delivery (slow send, failing send, full queue), and end-to-end rendering of
+the public site plus all six sections (with a deterministic local feed, no network needed).
+
+What the tests do **not** cover: real Yahoo Finance responses, actual browser layout at specific
+screen sizes, and multi-user load. Those require a running deployment and manual/visual checks.
+
+---
+
+## 8. Deploying (preserving the existing URL)
+
+The app remains a single Streamlit entry point (`app.py`) with `requirements.txt`, so the
+existing Streamlit Community Cloud app can be updated by pushing this repository — no URL change
+and no new deployment configuration are needed.
+
+1. Commit and push to the repository branch the Streamlit app watches.
+2. Streamlit Cloud installs `requirements.txt` and restarts `app.py`.
+3. Sign in with an existing account, or register a new one.
+
+Notes:
+
+- Python 3.12; no secrets required unless you enable PostgreSQL or Telegram.
+- Without `DATABASE_URL`, SQLite data resets when the container restarts (see §5).
+- The public website and the application live in the same deployment: the website is the
+  signed-out surface, the app is behind login. A fully separate marketing domain would be a
+  separate static deployment sharing the same brand assets.
+
+---
+
+## 9. Still requires external integrations
+
+| Capability | Status |
 |---|---|
-| “Provider rate limit reached (HTTP 429)” | Yahoo Finance throttles bursts. Wait a few minutes, press **Refresh data**, or raise the cache lifetime in Settings. |
-| Charts are empty / “Data unavailable” | The symbol, period or interval may not exist at the provider. Try another timeframe. Intraday intervals have limited history. |
-| Everything shows **SAMPLE DATA** | The provider is unreachable (offline, firewall, corporate proxy) and the fallback is enabled. Disable it in Settings for strict errors. |
-| `python` not recognised | Reinstall Python with “Add python.exe to PATH”, or use the `py` launcher: `py -m streamlit run app.py`. |
-| `ModuleNotFoundError: streamlit` | The virtual environment is not active, or dependencies are missing: activate `.venv` and reinstall requirements. |
-| PowerShell blocks activation | `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`, or use `.venv\Scripts\activate.bat`. |
-| Port already in use | `python -m streamlit run app.py --server.port 8600`. |
-| Fundamentals or earnings missing | The provider did not return them. MNZ shows the reason and does not invent values. |
-
-To reset the demo data completely, stop the app and delete `mnz_data/mnz.db` (it is
-recreated on the next launch), or use **Reset demo account** on the Demo Trading page.
+| Real-time streaming quotes | Not implemented — delayed Yahoo Finance only |
+| Synthetic indices (Deriv) | Requires a Deriv market-data connection and app id |
+| MT5 / Razor Markets | Planned targets only; no bridge, credentials or balances |
+| Live order execution | Permanently disabled in this build |
+| Live economic calendar feed | Not connected; recurring windows are labelled as typical |
+| Billing / subscriptions | Not implemented; demo access is free |
+| Outbound alert delivery | Optional Telegram via server env vars; no email provider |
+| Durable hosted database | PostgreSQL via `DATABASE_URL`, or SQLite on a persistent volume |
+| Native mobile app | Responsive web only |
 
 ---
 
-## 10. Limitations and planned commercial architecture
+## 10. Project structure
 
-Not implemented in version 1:
-
-- user authentication, individual customer accounts and per-user data isolation;
-- subscription plans, billing and licence enforcement;
-- automated order execution, broker connectivity and API trading keys (**permanently
-  disabled in this build**);
-- live economic calendar, real-time streaming quotes, options or futures term structure.
-
-The storage layer is already account-scoped, settings are namespaced JSON keys, and the
-dashboard is account-driven, so customer accounts, per-user settings, entitlements and
-licensing could be added later without redesigning the data model. See Settings → Safety &
-roadmap for the documented intent.
-
----
-
-## 11. Deploying to Streamlit Community Cloud
-
-The app is a long-running Streamlit server, so it needs a Python host — static hosting
-will not run it. Streamlit Community Cloud is the simplest free option:
-
-1. Commit the project and push it to a GitHub repository you have admin rights on
-   (public is simplest; private repositories work but only one private app is allowed).
-2. Sign in at [share.streamlit.io](https://share.streamlit.io) with GitHub.
-3. **Create app** → choose the repository and branch → main file `app.py` → advanced
-   settings → Python 3.12 → **Deploy**.
-4. No secrets are needed. The app never requests brokerage credentials or API keys, and
-   `requirements.txt` is installed automatically.
-
-What to expect from the hosted demo:
-
-- **The SQLite database resets on restart.** The filesystem is ephemeral, so
-  `mnz_data/mnz.db` is recreated whenever the app restarts, redeploys or wakes from
-  sleep. Simulated trades, saved backtests and setting changes return to the default
-  $10,000 demo account. Use a host with a persistent volume and set `MNZ_DB_PATH` if you
-  need that data to survive.
-- Apps sleep after 12 hours without traffic; the next visitor wakes the app.
-- There is **no authentication**: anyone with the URL can place simulated trades, reset
-  the demo account and edit settings. Share it accordingly.
-- GitHub Actions runs the test suite on every push once the repository is published
-  (see `.github/workflows/tests.yml`).
+```
+app.py                  Auth gate, sidebar/bottom navigation, page routing
+config.py               Brand, palette, markets, timeframes, thresholds, demo defaults
+auth.py                 PBKDF2 hashing, registration/login, hashed sessions
+state.py                Session user, demo account, per-user settings, navigation
+ui.py                   Theme, responsive CSS, charts and components
+website.py              Public marketing site + login/register
+scanner.py              Scan orchestration, signal persistence, alerts, conditions, Safety Guard
+ai.py                   Grounded MNZ AI responses
+analysis/
+  indicators.py         Technical indicators incl. ADX
+  signals.py            Signal engine, quality, ATR targets, outcome measurement
+  market_analyst.py     Version 1 explainable analyst (retained)
+  backtesting.py        Backtest engine and period comparison
+data/market_data.py     Provider access, timeframe mapping, H4 aggregation, connection monitor
+database/database.py    Schema and queries; SQLite and PostgreSQL backends
+simulator/              Demo account, virtual trades, portfolio analytics
+engines/                Per-market context engines (retained)
+pages/                  home, markets, signals_page, demo_page, ai_page, settings_page, common
+tests/                  pytest suite
+```
 
 ---
 
-## 12. Disclaimer
+## 11. Disclaimer
 
-MNZ MARKET INTELLIGENCE is an educational, analytical research tool. Nothing in it is
-financial advice, an investment recommendation or a solicitation to trade. Trading carries
-a risk of loss. Simulated and historical results do not guarantee future performance. The
-software is provided as-is, without warranty.
+MNZ BOT is an educational market-analysis and simulation tool. Nothing in it is financial advice,
+an investment recommendation or a solicitation to trade. Signals are rule-based readings of
+delayed data, not predictions. Trading carries a risk of loss. Simulated and historical results
+never guarantee future performance. The software is provided as-is, without warranty.

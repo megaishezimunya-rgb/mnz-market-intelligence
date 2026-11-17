@@ -1,7 +1,8 @@
-"""MNZ visual system: theme, charts and reusable components.
+"""MNZ BOT visual system: theme, charts and reusable components.
 
-Black, white and charcoal only.  No gradients, no gold, no decorative motion.
-Every helper here renders through Streamlit so the pages stay declarative.
+Black surfaces, white text, green for positive/up and red for negative/down.
+Desktop uses the collapsible sidebar; on phones the sidebar is replaced by a
+fixed touch-sized bottom navigation bar (rendered by ``app.py``).
 """
 
 from __future__ import annotations
@@ -16,604 +17,447 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 import config
-from analysis import indicators
-from analysis.market_analyst import AnalystReport
 from data.market_data import PriceData
 
-COLORS = config.COLORS
-_TEMPLATE = "mnz"
+GREEN = config.PALETTE["green"]
+RED = config.PALETTE["red"]
+MUTED = config.PALETTE["muted"]
+CARD = config.PALETTE["card"]
+BORDER = config.PALETTE["border"]
+_TEMPLATE = "mnz_bot"
 
 CSS = """
 <style>
 :root {
-  --mnz-black: #0A0A0B;
-  --mnz-panel: #121214;
-  --mnz-panel-alt: #17171A;
-  --mnz-border: #26262A;
-  --mnz-border-strong: #3A3A40;
-  --mnz-text: #F4F4F5;
-  --mnz-muted: #8C8C93;
-  --mnz-font: "Inter", "Helvetica Neue", Helvetica, Arial, system-ui, -apple-system, sans-serif;
+  --bg: #090B0F;
+  --card: #151922;
+  --card-alt: #1B202B;
+  --border: #232A38;
+  --muted: #8C93A3;
+  --text: #FFFFFF;
+  --green: #20D68A;
+  --red: #F04452;
+  --font: "Inter", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
 }
 
 html, body, [class*="css"], .stApp, button, input, textarea, select {
-  font-family: var(--mnz-font);
+  font-family: var(--font);
   -webkit-font-smoothing: antialiased;
 }
-
-.stApp { background: var(--mnz-black); color: var(--mnz-text); }
-
+.stApp { background: var(--bg); color: var(--text); }
 [data-testid="stHeader"] { background: transparent; }
 [data-testid="stHeader"] > div { background: transparent; }
-[data-testid="stToolbar"] { right: 1rem; }
-
+[data-testid="stToolbar"] { right: .8rem; }
 .block-container {
-  padding-top: 2.4rem;
-  padding-bottom: 3rem;
-  max-width: 1520px;
+  padding-top: 1.8rem;
+  padding-bottom: 3.2rem;
+  max-width: 1500px;
 }
+h1, h2, h3, h4 { color: var(--text); font-family: var(--font); }
+h1 { font-size: 1.85rem !important; font-weight: 700 !important; letter-spacing: -0.03em; margin-bottom: .1rem !important; }
+h2 { font-size: 1.25rem !important; font-weight: 650 !important; letter-spacing: -0.02em; }
+h3 {
+  font-size: .72rem !important; font-weight: 600 !important; letter-spacing: .18em;
+  text-transform: uppercase; color: var(--muted) !important; margin-top: .4rem !important;
+}
+p, li, label, span { color: var(--text); }
+a { color: var(--green); }
+hr { border-color: var(--border) !important; }
 
-/* ---------- Sidebar ---------- */
+/* ---------------- Sidebar (desktop) ---------------- */
 [data-testid="stSidebar"] {
-  background: #070708;
-  border-right: 1px solid var(--mnz-border);
+  background: #070A0E;
+  border-right: 1px solid var(--border);
 }
-[data-testid="stSidebar"] > div:first-child { padding-top: 0.4rem; }
-[data-testid="stSidebar"] .block-container { padding-top: 0.8rem; }
+[data-testid="stSidebar"] > div:first-child { padding-top: .3rem; }
+[data-testid="stSidebar"] .block-container { padding-top: .7rem; }
 
 .mnz-logo {
-  padding: 0.6rem 0 1.1rem 0;
-  margin-bottom: 0.9rem;
-  border-bottom: 1px solid var(--mnz-border);
+  padding: .5rem 0 1rem 0;
+  margin-bottom: .8rem;
+  border-bottom: 1px solid var(--border);
 }
 .mnz-logo .mark {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  color: #FFFFFF;
-  font-size: 2.05rem;
-  font-weight: 700;
-  letter-spacing: 0.22em;
-  line-height: 1;
+  display: flex; align-items: center; gap: .55rem;
+  color: #FFF; font-size: 1.55rem; font-weight: 800; letter-spacing: .04em; line-height: 1;
 }
-.mnz-logo .mark .tick {
-  display: inline-block;
-  width: 7px; height: 7px;
-  background: #FFFFFF;
-  margin-bottom: 3px;
+.mnz-logo .mark .dot {
+  width: 10px; height: 10px; border-radius: 3px; background: var(--green);
+  box-shadow: 0 0 14px rgba(32,214,138,.55);
 }
 .mnz-logo .sub {
-  margin-top: 0.55rem;
-  font-size: 0.6rem;
-  letter-spacing: 0.3em;
-  color: var(--mnz-muted);
-  text-transform: uppercase;
-  white-space: nowrap;
+  margin-top: .5rem; font-size: .58rem; letter-spacing: .28em;
+  color: var(--muted); text-transform: uppercase;
 }
-.mnz-logo .ver {
-  margin-top: 0.35rem;
-  font-size: 0.6rem;
-  letter-spacing: 0.14em;
-  color: #5C5C64;
-}
+.mnz-logo .ver { margin-top: .3rem; font-size: .58rem; letter-spacing: .12em; color: #56607A; }
 
 .mnz-nav-caption {
-  font-size: 0.6rem;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: #5C5C64;
-  margin: 0.2rem 0 0.5rem 0;
+  font-size: .58rem; letter-spacing: .22em; text-transform: uppercase;
+  color: #56607A; margin: .2rem 0 .45rem 0;
 }
-
-[data-testid="stSidebar"] div[role="radiogroup"] { gap: 2px; }
+[data-testid="stSidebar"] div[role="radiogroup"] { gap: 3px; }
 [data-testid="stSidebar"] div[role="radiogroup"] label {
-  padding: 0.5rem 0.7rem;
-  border-radius: 7px;
+  padding: .55rem .75rem;
+  border-radius: 9px;
   border: 1px solid transparent;
-  color: #B9B9C0;
-  font-size: 0.86rem;
-  letter-spacing: 0.01em;
-  transition: none;
+  color: #AEB6C6;
+  font-size: .88rem;
   cursor: pointer;
 }
-[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
-  background: #131316;
-  color: #FFFFFF;
-}
+[data-testid="stSidebar"] div[role="radiogroup"] label:hover { background: #11161F; color: #FFF; }
 [data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {
-  background: #F4F4F5;
-  color: #0A0A0B;
-  font-weight: 600;
-  border-color: #F4F4F5;
+  background: rgba(32,214,138,.10);
+  border-color: rgba(32,214,138,.35);
+  color: #FFF;
 }
-/* Hide the radio circle: it is the first child of the label's flex wrapper. */
 [data-testid="stSidebar"] div[role="radiogroup"] label > div { gap: 0 !important; }
 [data-testid="stSidebar"] div[role="radiogroup"] label > div > div:first-child { display: none; }
-[data-testid="stSidebar"] div[role="radiogroup"] label [data-testid="stMarkdownContainer"] { display: block !important; }
-[data-testid="stSidebar"] div[role="radiogroup"] label p { font-size: 0.86rem; color: inherit; }
-[data-testid="stSidebar"] div[role="radiogroup"] label[data-selected="true"],
-[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {
-  background: #F4F4F5;
-  color: #0A0A0B;
-  border-color: #F4F4F5;
-}
-[data-testid="stSidebar"] div[role="radiogroup"] label[data-selected="true"] p,
-[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p {
-  color: #0A0A0B;
-  font-weight: 600;
-}
+[data-testid="stSidebar"] div[role="radiogroup"] label p { font-size: .88rem; color: inherit; font-weight: 500; }
+[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p { font-weight: 650; }
 
 .mnz-sidebar-foot {
-  margin-top: 1.2rem;
-  padding-top: 0.9rem;
-  border-top: 1px solid var(--mnz-border);
-  font-size: 0.66rem;
-  line-height: 1.6;
-  color: #6E6E76;
-  letter-spacing: 0.02em;
+  margin-top: 1.1rem; padding-top: .9rem; border-top: 1px solid var(--border);
+  font-size: .64rem; line-height: 1.65; color: #6B7488; letter-spacing: .02em;
 }
-.mnz-sidebar-foot strong { color: #B9B9C0; font-weight: 600; letter-spacing: 0.12em; }
+.mnz-sidebar-foot strong { color: #AEB6C6; font-weight: 600; letter-spacing: .1em; }
 
-/* ---------- Typography ---------- */
-h1, h2, h3, h4 { color: var(--mnz-text); font-family: var(--mnz-font); }
-h1 { font-size: 1.7rem !important; font-weight: 600 !important; letter-spacing: -0.02em; margin-bottom: 0.1rem !important; }
-h2 { font-size: 1.22rem !important; font-weight: 600 !important; letter-spacing: -0.01em; }
-h3 {
-  font-size: 0.74rem !important;
-  font-weight: 600 !important;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--mnz-muted) !important;
-  margin-top: 0.4rem !important;
-}
-p, li, label, span { color: var(--mnz-text); }
-a { color: #FFFFFF; }
-
+/* ---------------- Headers ---------------- */
 .mnz-page-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: 1rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--mnz-border);
+  display: flex; justify-content: space-between; align-items: flex-end;
+  gap: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border);
   margin-bottom: 1.3rem;
 }
-.mnz-page-head .titles h1 { margin: 0 !important; }
+.mnz-page-head h1 { margin: 0 !important; }
 .mnz-page-head .sub {
-  font-size: 0.82rem;
-  color: var(--mnz-muted);
-  margin-top: 0.35rem;
-  max-width: 70ch;
-  line-height: 1.5;
+  font-size: .84rem; color: var(--muted); margin-top: .35rem;
+  max-width: 78ch; line-height: 1.55;
 }
 .mnz-page-head .tag {
-  flex: 0 0 auto;
-  font-size: 0.62rem;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--mnz-muted);
-  border: 1px solid var(--mnz-border-strong);
-  padding: 0.3rem 0.55rem;
-  border-radius: 4px;
+  flex: 0 0 auto; font-size: .6rem; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--green); border: 1px solid rgba(32,214,138,.35);
+  background: rgba(32,214,138,.07); padding: .32rem .6rem; border-radius: 999px;
   white-space: nowrap;
 }
 
-/* ---------- Demo bar ---------- */
-.mnz-demo-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  border: 1px solid var(--mnz-border-strong);
-  background: var(--mnz-panel);
-  border-left: 3px solid #FFFFFF;
-  padding: 0.6rem 0.9rem;
-  margin-bottom: 1.4rem;
-  font-size: 0.68rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #E6E6E8;
-}
-.mnz-demo-bar .right { color: var(--mnz-muted); letter-spacing: 0.1em; }
-.mnz-demo-bar .dot {
-  display: inline-block; width: 6px; height: 6px; background: #FFFFFF;
-  margin-right: 0.55rem; vertical-align: middle;
-}
-
-/* ---------- Cards & KPI ---------- */
+/* ---------------- Cards / KPI ---------------- */
 .mnz-card {
-  background: var(--mnz-panel);
-  border: 1px solid var(--mnz-border);
-  border-radius: 10px;
-  padding: 0.95rem 1.05rem;
-  margin-bottom: 0.75rem;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 14px; padding: 1rem 1.1rem; margin-bottom: .75rem;
 }
 .mnz-kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 0.6rem;
-  margin-bottom: 0.9rem;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: .65rem; margin-bottom: .9rem;
 }
 .mnz-kpi {
-  background: var(--mnz-panel);
-  border: 1px solid var(--mnz-border);
-  border-radius: 10px;
-  padding: 0.85rem 1rem 0.9rem 1rem;
-  height: 100%;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 14px; padding: .9rem 1rem; height: 100%;
 }
 .mnz-kpi .label {
-  font-size: 0.62rem;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: var(--mnz-muted);
-  margin-bottom: 0.42rem;
-  line-height: 1.4;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  font-size: .6rem; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: .4rem; line-height: 1.4;
 }
 .mnz-kpi .value {
-  font-size: 1.42rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-  color: #FFFFFF;
-  word-break: break-word;
+  font-size: 1.4rem; font-weight: 700; letter-spacing: -.02em; line-height: 1.15;
+  font-variant-numeric: tabular-nums; color: #FFF; word-break: break-word;
 }
-.mnz-kpi .note {
-  font-size: 0.7rem;
-  color: var(--mnz-muted);
-  margin-top: 0.35rem;
-  line-height: 1.4;
-}
-.mnz-kpi .value.up::before { content: "▲ "; font-size: 0.7em; }
-.mnz-kpi .value.down::before { content: "▼ "; font-size: 0.7em; }
+.mnz-kpi .note { font-size: .7rem; color: var(--muted); margin-top: .32rem; line-height: 1.45; }
+.mnz-kpi .value.up { color: var(--green); }
+.mnz-kpi .value.down { color: var(--red); }
 
-/* ---------- Labels / pills ---------- */
+/* ---------------- Pills ---------------- */
 .mnz-pill {
-  display: inline-block;
-  font-size: 0.64rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  padding: 0.3rem 0.6rem;
-  border-radius: 4px;
-  border: 1px solid var(--mnz-border-strong);
-  color: var(--mnz-text);
-  background: transparent;
-  white-space: nowrap;
+  display: inline-block; font-size: .63rem; letter-spacing: .1em; text-transform: uppercase;
+  padding: .28rem .6rem; border-radius: 999px; border: 1px solid var(--border);
+  color: var(--text); background: transparent; white-space: nowrap; font-weight: 650;
 }
-.mnz-pill.buy { background: #FFFFFF; color: #0A0A0B; border-color: #FFFFFF; font-weight: 700; }
-.mnz-pill.sell { background: #2A2A2E; color: #FFFFFF; border-color: #6E6E76; font-weight: 700; }
-.mnz-pill.wait { background: transparent; color: #B9B9C0; border-color: #3A3A40; font-weight: 600; }
-.mnz-pill.nodata { background: transparent; color: #8C8C93; border-style: dashed; }
+.mnz-pill.buy { background: rgba(32,214,138,.14); color: var(--green); border-color: rgba(32,214,138,.45); }
+.mnz-pill.sell { background: rgba(240,68,82,.14); color: var(--red); border-color: rgba(240,68,82,.45); }
+.mnz-pill.wait { background: rgba(140,147,163,.12); color: #C7CEDA; border-color: #384255; }
+.mnz-pill.nodata { border-style: dashed; color: var(--muted); }
+.mnz-pill.strong { background: rgba(32,214,138,.14); color: var(--green); border-color: rgba(32,214,138,.35); }
+.mnz-pill.moderate { background: rgba(255,255,255,.06); color: #D7DDEA; }
+.mnz-pill.weak { background: transparent; color: var(--muted); }
 
-.mnz-report-head {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.55rem;
+/* ---------------- Signal card ---------------- */
+.mnz-signal {
+  background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+  padding: .95rem 1.05rem; margin-bottom: .65rem;
 }
-.mnz-report-head .sym { font-size: 1.1rem; font-weight: 600; letter-spacing: 0.02em; }
-.mnz-report-head .conf { font-size: 0.7rem; color: var(--mnz-muted); letter-spacing: 0.08em; }
+.mnz-signal .top { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.mnz-signal .sym { font-size: 1.02rem; font-weight: 700; letter-spacing: .01em; }
+.mnz-signal .name { font-size: .76rem; color: var(--muted); }
+.mnz-signal .meta { margin-left: auto; font-size: .7rem; color: var(--muted); white-space: nowrap; }
+.mnz-signal .levels {
+  display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: .5rem; margin-top: .8rem;
+}
+.mnz-signal .levels .item {
+  background: #10141C; border: 1px solid #1E2532; border-radius: 10px; padding: .45rem .6rem;
+}
+.mnz-signal .levels .k { font-size: .56rem; letter-spacing: .14em; color: var(--muted); text-transform: uppercase; }
+.mnz-signal .levels .v { font-size: .9rem; font-weight: 650; font-variant-numeric: tabular-nums; margin-top: .15rem; }
+.mnz-signal .v.tp { color: var(--green); }
+.mnz-signal .v.sl { color: var(--red); }
+.mnz-signal .why { font-size: .78rem; color: #C7CEDA; line-height: 1.6; margin-top: .7rem; }
+.mnz-quality { display: flex; align-items: center; gap: .45rem; margin-top: .7rem; }
+.mnz-quality .bar { flex: 1; height: 5px; background: #1E2532; border-radius: 99px; overflow: hidden; }
+.mnz-quality .bar span { display: block; height: 100%; border-radius: 99px; }
+.mnz-quality .num { font-size: .66rem; color: var(--muted); letter-spacing: .06em; white-space: nowrap; }
 
+/* ---------------- Notices / source ---------------- */
 .mnz-notice {
-  border: 1px solid var(--mnz-border);
-  border-left: 2px solid #6E6E76;
-  background: var(--mnz-panel);
-  padding: 0.7rem 0.9rem;
-  border-radius: 4px;
-  font-size: 0.78rem;
-  line-height: 1.55;
-  color: #C9C9CE;
-  margin: 0.55rem 0 0.9rem 0;
+  border: 1px solid var(--border); border-left: 3px solid var(--muted);
+  background: var(--card); padding: .7rem .9rem; border-radius: 8px;
+  font-size: .8rem; line-height: 1.6; color: #C7CEDA; margin: .55rem 0 .9rem 0;
 }
-.mnz-notice.warn { border-left-color: #FFFFFF; color: #EFEFF1; }
-.mnz-notice strong { color: #FFFFFF; letter-spacing: 0.06em; }
-
-.mnz-source {
-  font-size: 0.68rem;
-  color: #6E6E76;
-  letter-spacing: 0.03em;
-  line-height: 1.6;
-  margin: 0.15rem 0 0.9rem 0;
-}
-.mnz-source .sample { color: #FFFFFF; font-weight: 600; letter-spacing: 0.12em; }
+.mnz-notice.warn { border-left-color: var(--red); color: #F2DDE0; }
+.mnz-notice.ok { border-left-color: var(--green); color: #D8F5E9; }
+.mnz-notice strong { color: #FFF; letter-spacing: .05em; }
+.mnz-source { font-size: .67rem; color: #6B7488; letter-spacing: .02em; line-height: 1.6; margin: .15rem 0 .9rem 0; }
+.mnz-source .sample { color: var(--red); font-weight: 700; letter-spacing: .1em; }
 
 .mnz-section {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 0.25rem 1rem;
-  margin: 1.5rem 0 0.7rem 0;
-  padding-bottom: 0.45rem;
-  border-bottom: 1px solid var(--mnz-border);
+  display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap;
+  gap: .25rem 1rem; margin: 1.5rem 0 .7rem 0; padding-bottom: .45rem;
+  border-bottom: 1px solid var(--border);
 }
-.mnz-section .title {
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: #D6D6DA;
-  white-space: nowrap;
-}
-.mnz-section .caption { font-size: 0.7rem; color: var(--mnz-muted); }
+.mnz-section .title { font-size: .7rem; font-weight: 650; letter-spacing: .18em; text-transform: uppercase; color: #D7DDEA; }
+.mnz-section .caption { font-size: .69rem; color: var(--muted); }
 
 .mnz-footer {
-  margin-top: 2.2rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--mnz-border);
-  font-size: 0.68rem;
-  color: #5C5C64;
-  line-height: 1.7;
+  margin-top: 2.2rem; padding-top: 1rem; border-top: 1px solid var(--border);
+  font-size: .67rem; color: #5B657A; line-height: 1.7;
 }
 
-/* ---------- Widgets ---------- */
+/* ---------------- Widgets ---------------- */
 div[data-testid="stButton"] > button,
 div[data-testid="stFormSubmitButton"] > button,
 div[data-testid="stDownloadButton"] > button {
-  border-radius: 6px;
-  border: 1px solid #FFFFFF;
-  background: #FFFFFF;
-  color: #0A0A0B;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  padding: 0.45rem 0.95rem;
-  box-shadow: none;
+  border-radius: 10px; border: 1px solid var(--green); background: var(--green);
+  color: #04140D; font-weight: 700; letter-spacing: .04em; font-size: .76rem;
+  padding: .5rem .95rem; box-shadow: none; min-height: 42px;
 }
-/* Streamlit renders button labels as markdown paragraphs, which would otherwise
-   keep the global light text colour and disappear on a white button. */
 div[data-testid="stButton"] > button p,
 div[data-testid="stFormSubmitButton"] > button p,
 div[data-testid="stDownloadButton"] > button p,
 div[data-testid="stButton"] > button span,
 div[data-testid="stFormSubmitButton"] > button span,
 div[data-testid="stDownloadButton"] > button span {
-  color: inherit !important;
-  font-size: inherit !important;
-  letter-spacing: inherit !important;
-  text-transform: inherit !important;
+  color: inherit !important; font-size: inherit !important; letter-spacing: inherit !important;
+  text-transform: inherit !important; font-weight: inherit !important;
 }
 div[data-testid="stButton"] > button:hover,
 div[data-testid="stFormSubmitButton"] > button:hover,
-div[data-testid="stDownloadButton"] > button:hover {
-  background: #D9D9DE;
-  border-color: #D9D9DE;
-  color: #0A0A0B;
-}
+div[data-testid="stDownloadButton"] > button:hover { background: #3CE6A2; border-color: #3CE6A2; }
 div[data-testid="stButton"] > button[kind="secondary"] {
-  background: transparent;
-  color: #F4F4F5;
-  border: 1px solid var(--mnz-border-strong);
+  background: transparent; color: #E3E8F2; border: 1px solid #2F394B;
 }
-div[data-testid="stButton"] > button[kind="secondary"]:hover {
-  border-color: #FFFFFF;
-  background: #17171A;
-  color: #FFFFFF;
-}
+div[data-testid="stButton"] > button[kind="secondary"]:hover { border-color: var(--green); color: var(--green); background: rgba(32,214,138,.06); }
 
 div[data-testid="stTextInput"] input,
 div[data-testid="stNumberInput"] input,
 div[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
-div[data-testid="stDateInput"] input {
-  background: var(--mnz-panel-alt) !important;
-  border-color: var(--mnz-border) !important;
-  color: var(--mnz-text) !important;
-  border-radius: 6px !important;
+div[data-testid="stDateInput"] input,
+div[data-testid="stTextArea"] textarea {
+  background: #10141C !important; border-color: #263042 !important;
+  color: var(--text) !important; border-radius: 10px !important;
 }
 div[data-testid="stTextInput"] input:focus,
 div[data-testid="stNumberInput"] input:focus {
-  border-color: #FFFFFF !important;
-  box-shadow: none !important;
+  border-color: var(--green) !important; box-shadow: none !important;
 }
 div[data-testid="stWidgetLabel"] p {
-  font-size: 0.7rem !important;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--mnz-muted) !important;
+  font-size: .68rem !important; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muted) !important;
 }
-
-/* Multiselect chips use primaryColor by default, which is white here.
-   Override them so selected instruments stay readable. */
-/* Let selected chips wrap instead of scrolling off the edge on narrow screens. */
-div[data-testid="stMultiSelect"] div[data-testid="stMultiSelectTagsContainer"],
-div[data-testid="stMultiSelect"] div[data-rac],
-div[data-testid="stMultiSelect"] div[data-rac] > div {
-  height: auto !important;
-  max-height: none !important;
+div[data-testid="stCheckbox"] label p,
+div[data-testid="stCheckbox"] [data-testid="stWidgetLabel"] p {
+  text-transform: none !important; font-size: .82rem !important;
+  letter-spacing: 0 !important; color: #C7CEDA !important;
 }
-div[data-testid="stMultiSelect"] div[data-testid="stMultiSelectTagsContainer"] {
-  flex-wrap: wrap;
-  overflow: visible;
-  row-gap: 0.3rem;
-  padding: 0.35rem 0;
-}
-div[data-testid="stMultiSelect"] div[data-rac] { min-height: 40px; }
 [data-testid="stMultiSelect"] span[data-tag] {
-  background-color: #1C1C20 !important;
-  border: 1px solid #3A3A40 !important;
-  border-radius: 4px !important;
-  color: #F4F4F5 !important;
+  background-color: #1B2230 !important; border: 1px solid #2F394B !important;
+  border-radius: 6px !important; color: #F4F4F5 !important;
 }
-[data-testid="stMultiSelect"] span[data-tag] > span { color: #F4F4F5 !important; }
-[data-testid="stMultiSelect"] span[data-tag] button { color: #B9B9C0 !important; }
-
-/* Dropdown options sit on the dark panel; keep hover/selection monochrome. */
-div[data-baseweb="popover"] ul,
-div[data-baseweb="menu"] {
-  background-color: #17171A !important;
-  border: 1px solid #2A2A2E !important;
-}
-div[data-baseweb="popover"] li:hover,
-div[data-baseweb="menu"] li:hover { background-color: #26262A !important; }
-
-/* Selected options in multiselect / selectbox dropdowns. */
-div[data-baseweb="popover"] li[aria-selected="true"],
-div[data-baseweb="menu"] li[aria-selected="true"] {
-  background-color: #F4F4F5 !important;
-  color: #0A0A0B !important;
-}
-div[data-baseweb="popover"] li[aria-selected="true"] span,
-div[data-baseweb="menu"] li[aria-selected="true"] span { color: #0A0A0B !important; }
-
-/* Checkbox sentences should stay sentence case rather than all-caps labels. */
-div[data-testid="stCheckbox"] [data-testid="stWidgetLabel"] p,
-div[data-testid="stCheckbox"] label p {
-  text-transform: none !important;
-  font-size: 0.8rem !important;
-  letter-spacing: 0 !important;
-  color: #C9C9CE !important;
+div[data-baseweb="popover"] ul, div[data-baseweb="menu"] { background-color: #151922 !important; border: 1px solid #263042 !important; }
+div[data-baseweb="popover"] li:hover, div[data-baseweb="menu"] li:hover { background-color: #1E2532 !important; }
+div[data-baseweb="popover"] li[aria-selected="true"], div[data-baseweb="menu"] li[aria-selected="true"] {
+  background-color: rgba(32,214,138,.16) !important; color: #FFF !important;
 }
 
-/* Wrapping table for long-form values (analyst readings, fundamentals, events). */
+div[data-testid="stTabs"] button { color: var(--muted); font-size: .78rem; font-weight: 550; }
+div[data-testid="stTabs"] button[aria-selected="true"] { color: #FFF; }
+div[data-testid="stTabs"] div[data-baseweb="tab-highlight"] { background: var(--green); }
+div[data-testid="stTabs"] div[data-baseweb="tab-border"] { background: var(--border); }
+
+div[data-testid="stExpander"] details { border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+div[data-testid="stExpander"] summary { font-size: .82rem; color: #D7DDEA; }
+div[data-testid="stDataFrame"] { border: 1px solid var(--border); border-radius: 12px; }
+div[data-testid="stMetric"] { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: .8rem 1rem; }
+[data-testid="stMetricLabel"] p { font-size: .64rem !important; letter-spacing: .14em; text-transform: uppercase; color: var(--muted) !important; }
+[data-testid="stMetricValue"] { font-size: 1.35rem !important; font-weight: 700 !important; }
+div[data-testid="stAlert"] { border-radius: 10px; border: 1px solid var(--border); }
+
+/* ---------------- Tables ---------------- */
 .mnz-html-table-wrap {
-  width: 100%;
-  overflow-x: auto;
-  border: 1px solid var(--mnz-border);
-  border-radius: 8px;
-  margin: 0.1rem 0 0.7rem 0;
-  background: var(--mnz-panel);
+  width: 100%; overflow-x: auto; border: 1px solid var(--border);
+  border-radius: 12px; margin: .1rem 0 .7rem 0; background: var(--card);
 }
-.mnz-html-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.8rem;
-}
+.mnz-html-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
 .mnz-html-table th {
-  text-align: left;
-  padding: 0.55rem 0.75rem;
-  font-size: 0.62rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--mnz-muted);
-  border-bottom: 1px solid var(--mnz-border);
-  white-space: nowrap;
-  font-weight: 500;
+  text-align: left; padding: .55rem .75rem; font-size: .6rem; letter-spacing: .13em;
+  text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border);
+  white-space: nowrap; font-weight: 500;
 }
 .mnz-html-table td {
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid #1D1D21;
-  color: var(--mnz-text);
-  vertical-align: top;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
+  padding: .52rem .75rem; border-bottom: 1px solid #1A2029; color: var(--text);
+  vertical-align: top; line-height: 1.5; overflow-wrap: anywhere;
 }
 .mnz-html-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mnz-html-table tbody tr:last-child td { border-bottom: none; }
 
-/* Keep long caution text in checkboxes readable on small screens. */
+/* ---------------- Chat ---------------- */
+.mnz-chat-user {
+  background: rgba(32,214,138,.10); border: 1px solid rgba(32,214,138,.25);
+  border-radius: 14px 14px 4px 14px; padding: .7rem .9rem; margin: .5rem 0 .5rem auto;
+  max-width: 86%; font-size: .86rem; line-height: 1.6;
+}
+.mnz-chat-ai {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 14px 14px 14px 4px; padding: .8rem 1rem; margin: .5rem 0;
+  max-width: 92%; font-size: .86rem; line-height: 1.65;
+}
+.mnz-chat-ai .who { font-size: .58rem; letter-spacing: .18em; color: var(--green); text-transform: uppercase; margin-bottom: .35rem; }
+
+/* ---------------- Public site ---------------- */
+.mnz-public { max-width: 1180px; margin: 0 auto; }
+.mnz-public .topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .9rem 0 1.4rem 0; border-bottom: 1px solid var(--border); margin-bottom: 2rem;
+}
+.mnz-public .wordmark { display: flex; align-items: center; gap: .5rem; font-weight: 800; letter-spacing: .06em; font-size: 1.15rem; }
+.mnz-public .wordmark .dot { width: 9px; height: 9px; border-radius: 3px; background: var(--green); box-shadow: 0 0 12px rgba(32,214,138,.5); }
+.mnz-hero { padding: 1.2rem 0 2.4rem 0; }
+.mnz-hero .eyebrow { font-size: .64rem; letter-spacing: .22em; text-transform: uppercase; color: var(--green); margin-bottom: .8rem; }
+.mnz-hero h1 { font-size: clamp(2rem, 5vw, 3.6rem) !important; line-height: 1.04; letter-spacing: -.04em; max-width: 16ch; margin: 0 0 1rem 0 !important; }
+.mnz-hero p { font-size: 1rem; color: #B6BECD; max-width: 62ch; line-height: 1.7; }
+.mnz-hero .actions { display: flex; gap: .6rem; flex-wrap: wrap; margin-top: 1.4rem; }
+.mnz-btn {
+  display: inline-block; padding: .65rem 1.1rem; border-radius: 10px;
+  font-size: .8rem; font-weight: 700; text-decoration: none;
+  background: var(--green); color: #04140D; border: 1px solid var(--green);
+}
+.mnz-btn.ghost { background: transparent; color: #E3E8F2; border-color: #2F394B; }
+.mnz-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: .8rem; margin: 1rem 0 2rem 0; }
+.mnz-feature { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 1.15rem 1.2rem; }
+.mnz-feature .icon { width: 30px; height: 30px; border-radius: 9px; background: rgba(32,214,138,.12); border: 1px solid rgba(32,214,138,.3); display: flex; align-items: center; justify-content: center; font-size: .8rem; color: var(--green); margin-bottom: .7rem; }
+.mnz-feature h4 { font-size: .95rem; margin: 0 0 .35rem 0; letter-spacing: -.01em; }
+.mnz-feature p { font-size: .8rem; color: #AEB6C6; line-height: 1.65; margin: 0; }
+.mnz-band { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 1.8rem 0; margin: 1.5rem 0; }
+.mnz-band h2 { margin-bottom: .5rem; }
+.mnz-band p { color: #B6BECD; max-width: 72ch; line-height: 1.7; font-size: .9rem; }
+.mnz-price { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 1.4rem 1.3rem; position: relative; }
+.mnz-price.featured { border-color: rgba(32,214,138,.45); box-shadow: 0 0 40px rgba(32,214,138,.06); }
+.mnz-price .tier { font-size: .68rem; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+.mnz-price .amount { font-size: 2rem; font-weight: 750; letter-spacing: -.03em; margin: .45rem 0 .1rem 0; }
+.mnz-price .amount small { font-size: .7rem; color: var(--muted); font-weight: 500; letter-spacing: 0; }
+.mnz-price ul { list-style: none; padding: 0; margin: .9rem 0 0 0; }
+.mnz-price li { font-size: .8rem; color: #B6BECD; padding: .3rem 0 .3rem 1.1rem; position: relative; }
+.mnz-price li::before { content: "✓"; position: absolute; left: 0; color: var(--green); }
+.mnz-public .fine { font-size: .68rem; color: #5B657A; line-height: 1.7; margin-top: 2rem; }
+.mnz-stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .7rem; margin: 1.4rem 0 .6rem 0; }
+.mnz-stat { background: #0E1219; border: 1px solid var(--border); border-radius: 12px; padding: .8rem .9rem; }
+.mnz-stat .k { font-size: .58rem; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.mnz-stat .v { font-size: 1.15rem; font-weight: 700; margin-top: .25rem; }
+
+/* ---------------- Mobile bottom navigation ---------------- */
+.st-key-mobile_nav { display: none; }
+
 @media (max-width: 900px) {
-  .mnz-html-table { font-size: 0.76rem; }
-  .mnz-html-table th, .mnz-html-table td { padding: 0.45rem 0.55rem; }
-}
-
-/* On phones, stack long tables into labelled rows instead of clipping them. */
-@media (max-width: 640px) {
-  .mnz-html-table-wrap { overflow-x: visible; }
-  .mnz-html-table { min-width: 0 !important; display: block; }
-  .mnz-html-table thead { display: none; }
-  .mnz-html-table tbody { display: block; }
-  .mnz-html-table tr { display: block; padding: 0.65rem 0.75rem; border-bottom: 1px solid #1D1D21; }
-  .mnz-html-table tbody tr:last-child { border-bottom: none; }
-  .mnz-html-table td {
-    display: block;
-    border: none;
-    padding: 0.08rem 0;
-    overflow-wrap: anywhere;
-  }
-  .mnz-html-table td:first-child {
-    font-size: 0.64rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--mnz-muted);
-    padding-bottom: 0.2rem;
-  }
-  .mnz-html-table td.num { text-align: left; }
-}
-
-div[data-testid="stTabs"] button {
-  color: var(--mnz-muted);
-  font-size: 0.78rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-weight: 500;
-}
-div[data-testid="stTabs"] button[aria-selected="true"] { color: #FFFFFF; }
-div[data-testid="stTabs"] div[data-baseweb="tab-highlight"] { background: #FFFFFF; }
-div[data-testid="stTabs"] div[data-baseweb="tab-border"] { background: var(--mnz-border); }
-
-div[data-testid="stExpander"] details {
-  border: 1px solid var(--mnz-border);
-  border-radius: 8px;
-  background: var(--mnz-panel);
-}
-div[data-testid="stExpander"] summary { font-size: 0.8rem; color: #D6D6DA; }
-
-div[data-testid="stDataFrame"] { border: 1px solid var(--mnz-border); border-radius: 8px; }
-div[data-testid="stDataFrame"] * { font-size: 0.8rem; }
-
-[data-testid="stMetric"] {
-  background: var(--mnz-panel);
-  border: 1px solid var(--mnz-border);
-  border-radius: 10px;
-  padding: 0.8rem 1rem;
-}
-[data-testid="stMetricLabel"] p { font-size: 0.66rem !important; letter-spacing: 0.15em; text-transform: uppercase; color: var(--mnz-muted) !important; }
-[data-testid="stMetricValue"] { font-size: 1.35rem !important; font-weight: 600 !important; }
-
-div[data-testid="stAlert"] { border-radius: 6px; border: 1px solid var(--mnz-border); }
-
-hr { border-color: var(--mnz-border) !important; }
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: #0A0A0B; }
-::-webkit-scrollbar-thumb { background: #2A2A2E; border-radius: 4px; }
-
-/* ---------- Responsive ---------- */
-@media (max-width: 900px) {
-  .block-container { padding-top: 1.6rem; padding-left: 1rem; padding-right: 1rem; }
-  .mnz-logo .mark { font-size: 1.65rem; }
+  .block-container { padding: 1.1rem .9rem 6.4rem .9rem; }
   .mnz-page-head { flex-direction: column; align-items: flex-start; }
   .mnz-page-head .tag { align-self: flex-start; }
-  .mnz-kpi .value { font-size: 1.2rem; }
-  .mnz-demo-bar { font-size: 0.6rem; }
-  .mnz-section { flex-direction: column; align-items: flex-start; }
-  .mnz-section .title { white-space: normal; }
+  .mnz-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+  .mnz-kpi .value { font-size: 1.18rem; }
+  .mnz-signal .levels { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .35rem; }
+  .mnz-signal .meta { margin-left: 0; width: 100%; }
+  .mnz-hero { padding-top: .4rem; }
+  .mnz-public .topbar { margin-bottom: 1.2rem; }
+  [data-testid="stSidebar"] { display: none; }
+  [data-testid="stSidebarCollapsedControl"],
+  [data-testid="stSidebarCollapseButton"],
+  [data-testid="stExpandSidebarButton"],
+  [data-testid="collapsedControl"] { display: none !important; }
+  .st-key-mobile_nav {
+    display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 1000;
+    background: rgba(9,11,15,.97); border-top: 1px solid #232A38;
+    padding: .3rem .35rem calc(.35rem + env(safe-area-inset-bottom)) .35rem;
+    backdrop-filter: blur(14px);
+  }
+  .st-key-mobile_nav [data-testid="stHorizontalBlock"] { gap: 1px; }
+  .st-key-mobile_nav [data-testid="column"] { padding: 0 !important; }
+  .st-key-mobile_nav button {
+    width: 100%; min-height: 52px; background: transparent !important;
+    border: none !important; color: #7C879B !important; padding: .3rem 0 !important;
+    border-radius: 10px !important; box-shadow: none !important;
+  }
+  .st-key-mobile_nav button p {
+    font-size: .6rem !important; letter-spacing: .02em !important;
+    font-weight: 600 !important; white-space: nowrap;
+  }
+  .st-key-mobile_nav button[kind="primary"] { color: var(--green) !important; }
+  .st-key-mobile_nav button[kind="secondary"] { color: #7C879B !important; border: none !important; }
 }
+
+@media (max-width: 640px) {
+  .mnz-html-table-wrap { overflow-x: visible; }
+  .mnz-html-table { display: block; min-width: 0 !important; }
+  .mnz-html-table thead { display: none; }
+  .mnz-html-table tbody, .mnz-html-table tr { display: block; }
+  .mnz-html-table tr { padding: .6rem .75rem; border-bottom: 1px solid #1A2029; }
+  .mnz-html-table tr:last-child { border-bottom: none; }
+  .mnz-html-table td { display: block; border: none; padding: .07rem 0; }
+  .mnz-html-table td:first-child {
+    font-size: .62rem; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted); padding-bottom: .2rem;
+  }
+  .mnz-html-table td.num { text-align: left; }
+  .mnz-hero h1 { max-width: 100%; }
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: #2A3142; border-radius: 4px; }
 </style>
 """
 
 
 # --------------------------------------------------------------------------- #
-# Setup and primitives
+# Theme
 # --------------------------------------------------------------------------- #
 def inject_theme() -> None:
-    """Apply the MNZ visual system once per page render."""
     st.markdown(CSS, unsafe_allow_html=True)
-    _register_plotly_template()
+    _register_template()
 
 
-def _register_plotly_template() -> None:
+def _register_template() -> None:
     if _TEMPLATE in pio.templates:
         return
     pio.templates[_TEMPLATE] = go.layout.Template(
         layout=go.Layout(
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(family='Inter, "Helvetica Neue", Arial, sans-serif', color=COLORS["muted"], size=11),
+            font=dict(family="Inter, -apple-system, Segoe UI, Arial, sans-serif",
+                      color=MUTED, size=11),
             colorway=config.CHART_COLORWAY,
-            margin=dict(l=8, r=8, t=28, b=8),
-            xaxis=dict(gridcolor=COLORS["grid"], zeroline=False, linecolor=COLORS["charcoal"],
-                       tickfont=dict(size=10, color=COLORS["muted"])),
-            yaxis=dict(gridcolor=COLORS["grid"], zeroline=False, linecolor=COLORS["charcoal"],
-                       tickfont=dict(size=10, color=COLORS["muted"])),
+            margin=dict(l=6, r=6, t=26, b=6),
+            xaxis=dict(gridcolor="#1A2029", zeroline=False, linecolor="#232A38",
+                       tickfont=dict(size=10, color=MUTED)),
+            yaxis=dict(gridcolor="#1A2029", zeroline=False, linecolor="#232A38",
+                       tickfont=dict(size=10, color=MUTED)),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0,
-                        font=dict(size=10, color=COLORS["muted"]), bgcolor="rgba(0,0,0,0)"),
-            hoverlabel=dict(bgcolor="#17171A", bordercolor="#3A3A40",
-                            font=dict(color="#F4F4F5", size=11)),
+                        font=dict(size=10, color=MUTED), bgcolor="rgba(0,0,0,0)"),
+            hoverlabel=dict(bgcolor="#1B202B", bordercolor="#2F394B",
+                            font=dict(color="#FFFFFF", size=11)),
             hovermode="x unified",
         )
     )
@@ -622,50 +466,28 @@ def _register_plotly_template() -> None:
 def _style(fig: go.Figure, height: int = 380, title: str | None = None) -> go.Figure:
     fig.update_layout(template=_TEMPLATE, height=height)
     if title:
-        fig.update_layout(title=dict(text=title.upper(), font=dict(size=10, color=COLORS["muted"]),
+        fig.update_layout(title=dict(text=title.upper(), font=dict(size=10, color=MUTED),
                                      x=0, xanchor="left", y=0.98))
     return fig
 
 
+# --------------------------------------------------------------------------- #
+# Primitives
+# --------------------------------------------------------------------------- #
 def brand_logo() -> None:
-    """Prominent MNZ wordmark for the navigation sidebar."""
     st.markdown(
-        '<div class="mnz-logo"><div class="mark"><span class="tick"></span>MNZ</div>'
+        '<div class="mnz-logo"><div class="mark"><span class="dot"></span>MNZ BOT</div>'
         f'<div class="sub">{escape(config.TAGLINE)}</div>'
-        f'<div class="ver">VERSION {escape(config.VERSION)} · DEMO</div></div>',
+        f'<div class="ver">v{escape(config.VERSION)} · DEMO</div></div>',
         unsafe_allow_html=True,
     )
-
-
-def flash(message: str, kind: str = "success") -> None:
-    """Queue a message to show after the next rerun."""
-    st.session_state["_mnz_flash"] = (kind, message)
-
-
-def pop_flash() -> None:
-    """Display and clear a queued flash message."""
-    item = st.session_state.pop("_mnz_flash", None)
-    if not item:
-        return
-    kind, message = item if isinstance(item, tuple) else ("success", str(item))
-    display = {"success": st.success, "error": st.error, "info": st.info, "warning": st.warning}.get(kind, st.success)
-    display(message)
 
 
 def page_header(title: str, subtitle: str = "", tag: str | None = None) -> None:
     tag_html = f'<div class="tag">{escape(tag)}</div>' if tag else ""
     st.markdown(
-        f'<div class="mnz-page-head"><div class="titles"><h1>{escape(title)}</h1>'
+        f'<div class="mnz-page-head"><div><h1>{escape(title)}</h1>'
         f'<div class="sub">{escape(subtitle)}</div></div>{tag_html}</div>',
-        unsafe_allow_html=True,
-    )
-
-
-def demo_bar(right: str | None = None) -> None:
-    right_text = escape(right) if right else "Python · Streamlit · SQLite · virtual only"
-    st.markdown(
-        f'<div class="mnz-demo-bar"><span><span class="dot"></span>DEMO MODE — {escape(config.DEMO_BANNER.split("— ", 1)[-1])}</span>'
-        f'<span class="right">{right_text}</span></div>',
         unsafe_allow_html=True,
     )
 
@@ -674,6 +496,30 @@ def section(title: str, caption: str = "") -> None:
     st.markdown(
         f'<div class="mnz-section"><div class="title">{escape(title)}</div>'
         f'<div class="caption">{escape(caption)}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def demo_bar(right: str | None = None) -> None:
+    text = escape(right) if right else "Virtual money · simulated positions only"
+    st.markdown(
+        '<div class="mnz-notice ok" style="display:flex;justify-content:space-between;gap:.6rem;'
+        'align-items:center;flex-wrap:wrap;font-size:.7rem;letter-spacing:.06em;text-transform:uppercase">'
+        '<span><strong>DEMO</strong> — no broker connected, no live orders</span>'
+        f'<span style="color:#8C93A3">{text}</span></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def notice(text: str, kind: str = "info") -> None:
+    cls = {"warn": "mnz-notice warn", "ok": "mnz-notice ok"}.get(kind, "mnz-notice")
+    st.markdown(f'<div class="{cls}">{text}</div>', unsafe_allow_html=True)
+
+
+def empty_state(message: str, hint: str = "") -> None:
+    st.markdown(
+        f'<div class="mnz-notice warn">{escape(message)}'
+        + (f"<br>{escape(hint)}" if hint else "") + "</div>",
         unsafe_allow_html=True,
     )
 
@@ -689,23 +535,25 @@ def kpi(label: str, value: str, note: str = "", trend: int = 0) -> str:
 
 
 def kpi_row(items: list[dict]) -> None:
-    """Render a responsive grid of KPI cards.
-
-    Each item: ``{label, value, note?, trend?}``. A CSS grid is used instead of
-    Streamlit columns so the cards reflow onto one column on mobile.
-    """
-    if not items:
-        return
     cards = "".join(
-        kpi(item.get("label", ""), item.get("value", "—"), item.get("note", ""), item.get("trend", 0))
+        kpi(item.get("label", ""), item.get("value", "—"),
+            item.get("note", ""), item.get("trend", 0))
         for item in items
     )
     st.markdown(f'<div class="mnz-kpi-grid">{cards}</div>', unsafe_allow_html=True)
 
 
-def notice(text: str, kind: str = "info") -> None:
-    cls = "mnz-notice warn" if kind == "warn" else "mnz-notice"
-    st.markdown(f'<div class="{cls}">{text}</div>', unsafe_allow_html=True)
+def flash(message: str, kind: str = "success") -> None:
+    st.session_state["_mnz_flash"] = (kind, message)
+
+
+def pop_flash() -> None:
+    item = st.session_state.pop("_mnz_flash", None)
+    if not item:
+        return
+    kind, message = item if isinstance(item, tuple) else ("success", str(item))
+    {"success": st.success, "error": st.error, "info": st.info,
+     "warning": st.warning}.get(kind, st.success)(message)
 
 
 def source_line(price: PriceData | None = None, extra: str = "") -> None:
@@ -715,11 +563,11 @@ def source_line(price: PriceData | None = None, extra: str = "") -> None:
         return
     if price.ok:
         stamp = price.last_bar_time.strftime("%Y-%m-%d %H:%M") if price.last_bar_time else "unknown"
-        quality = price.status_note()
         sample = '<span class="sample">SAMPLE DATA · </span>' if price.is_sample else ""
+        tf = f" · {price.timeframe}" if getattr(price, "timeframe", "") else ""
         text = (
-            f"{sample}{escape(price.source_label)} · {price.bars} bars · last bar {escape(stamp)} UTC · "
-            f"{escape(quality)}"
+            f"{sample}{escape(price.source_label)} · {price.bars} bars · interval {escape(price.interval)}"
+            f"{escape(tf)} · last bar {escape(stamp)} UTC · {escape(price.status_note())}"
         )
     else:
         text = f"Data unavailable · {escape(price.error or 'no rows returned')}"
@@ -730,74 +578,9 @@ def source_line(price: PriceData | None = None, extra: str = "") -> None:
 
 def footer() -> None:
     st.markdown(
-        f'<div class="mnz-footer">{escape(config.DISCLAIMER)}<br>'
-        f'{escape(config.BRAND)} · {escape(config.APP_NAME)} v{escape(config.VERSION)} · '
-        f'DEMO ONLY — no broker connection, no live orders, no real money.</div>',
-        unsafe_allow_html=True,
-    )
-
-
-def empty_state(message: str, hint: str = "") -> None:
-    """Neutral empty state; callers supply the full sentence so wording is not duplicated."""
-    notice(escape(message) + (f"<br>{escape(hint)}" if hint else ""), "warn")
-
-
-# --------------------------------------------------------------------------- #
-# Table rendering (single place to adapt to Streamlit versions)
-# --------------------------------------------------------------------------- #
-def show_table(frame: pd.DataFrame, height: int | None = None, columns: list[str] | None = None) -> None:
-    if frame is None or frame.empty:
-        notice("No rows to display.", "warn")
-        return
-    view = frame[columns] if columns else frame
-    options: dict = {"width": "stretch", "hide_index": True}
-    if height is not None:
-        options["height"] = int(height)
-    st.dataframe(view, **options)
-
-
-def show_chart(fig: go.Figure) -> None:
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
-
-
-def html_table(
-    frame: pd.DataFrame,
-    *,
-    columns: list[str] | None = None,
-    numeric: list[str] | None = None,
-    min_width: int = 520,
-) -> None:
-    """Render a wrapping HTML table for long-form content.
-
-    Streamlit's dataframe clips long cell text, which is wrong for analyst
-    interpretations, fundamentals and event notes. This table wraps instead and
-    scrolls horizontally on narrow screens.
-    """
-    if frame is None or frame.empty:
-        notice("No rows to display.", "warn")
-        return
-    view = frame[columns] if columns else frame
-    numeric_columns = set(numeric or [])
-
-    def cell(value) -> str:
-        if value is None:
-            return "—"
-        if isinstance(value, float) and not np.isfinite(value):
-            return "—"
-        return escape(str(value))
-
-    head = "".join(f"<th>{escape(str(col))}</th>" for col in view.columns)
-    body_rows = []
-    for _, row in view.iterrows():
-        cells = []
-        for col in view.columns:
-            css = ' class="num"' if col in numeric_columns else ""
-            cells.append(f"<td{css}>{cell(row[col])}</td>")
-        body_rows.append("<tr>" + "".join(cells) + "</tr>")
-    st.markdown(
-        f'<div class="mnz-html-table-wrap"><table class="mnz-html-table" '
-        f'style="min-width:{int(min_width)}px"><thead><tr>{head}</tr></thead>'
-        f'<tbody>{"".join(body_rows)}</tbody></table></div>',
+        f'<div class="mnz-footer">{escape(config.DISCLAIMER)}<br><br>'
+        f'{escape(config.BRAND)} v{escape(config.VERSION)} · DEMO ONLY — no broker '
+        "connection, no live orders, no real money.</div>",
         unsafe_allow_html=True,
     )
 
@@ -835,166 +618,287 @@ def number(value: float | None, digits: int = 2) -> str:
     return f"{value:,.{digits}f}"
 
 
+def label_pill(label: str) -> str:
+    cls = {"BUY": "buy", "SELL": "sell", "WAIT": "wait"}.get(label, "nodata")
+    return f'<span class="mnz-pill {cls}">{escape(label)}</span>'
+
+
+def strength_pill(strength: str) -> str:
+    cls = {"Strong": "strong", "Moderate": "moderate"}.get(strength, "weak")
+    return f'<span class="mnz-pill {cls}">{escape(strength)}</span>'
+
+
+def quality_bar(quality: int) -> str:
+    value = max(0, min(100, int(quality)))
+    color = GREEN if value >= 70 else ("#E7B75B" if value >= 50 else RED)
+    return (
+        f'<div class="mnz-quality"><div class="bar"><span style="width:{value}%;'
+        f'background:{color}"></span></div><div class="num">QUALITY {value}/100</div></div>'
+    )
+
+
+def signal_card(row: dict, *, name: str = "", explanation: str | None = None,
+                show_quality: bool = True) -> None:
+    """Render a stored or freshly built signal."""
+    label = row.get("label", "WAIT")
+    tf = row.get("timeframe", "")
+    strength = row.get("strength", "")
+    meta = " · ".join(part for part in [
+        escape(str(tf)) if tf else "", escape(str(row.get("created_at", ""))[:16].replace("T", " ")),
+    ] if part)
+    levels = ""
+    if row.get("label") in {"BUY", "SELL"} and row.get("tp") is not None:
+        levels = (
+            '<div class="levels">'
+            f'<div class="item"><div class="k">Entry reference</div><div class="v">{price_fmt(row.get("entry_ref"))}</div></div>'
+            f'<div class="item"><div class="k">Simulated TP</div><div class="v tp">{price_fmt(row.get("tp"))}</div></div>'
+            f'<div class="item"><div class="k">Simulated SL</div><div class="v sl">{price_fmt(row.get("sl"))}</div></div>'
+            "</div>"
+        )
+    why = explanation if explanation is not None else row.get("explanation", "")
+    quality = quality_bar(int(row.get("quality") or 0)) if show_quality else ""
+    st.markdown(
+        '<div class="mnz-signal"><div class="top">'
+        f'{label_pill(label)}<span class="sym">{escape(str(row.get("symbol", "")))}</span>'
+        f'<span class="name">{escape(name)}</span>{strength_pill(strength)}'
+        f'<span class="meta">{meta}</span></div>'
+        + (f'<div class="why">{escape(str(why))}</div>' if why else "")
+        + levels + quality + "</div>",
+        unsafe_allow_html=True,
+    )
+
+
 # --------------------------------------------------------------------------- #
-# Charts
+# Tables / charts
 # --------------------------------------------------------------------------- #
+def show_table(frame: pd.DataFrame, height: int | None = None,
+               columns: list[str] | None = None) -> None:
+    if frame is None or frame.empty:
+        notice("No rows to display.", "warn")
+        return
+    if columns:
+        available = [column for column in columns if column in frame.columns]
+        view = frame[available] if available else frame
+    else:
+        view = frame
+    options: dict = {"width": "stretch", "hide_index": True}
+    if height is not None:
+        options["height"] = int(height)
+    st.dataframe(view, **options)
+
+
+def show_chart(fig: go.Figure) -> None:
+    st.plotly_chart(fig, width="stretch",
+                    config={"displayModeBar": False, "responsive": True})
+
+
+def html_table(frame: pd.DataFrame, *, columns: list[str] | None = None,
+               numeric: list[str] | None = None, min_width: int = 520) -> None:
+    if frame is None or frame.empty:
+        notice("No rows to display.", "warn")
+        return
+    if columns:
+        available = [column for column in columns if column in frame.columns]
+        view = frame[available] if available else frame
+    else:
+        view = frame
+    numeric_columns = set(numeric or [])
+
+    def cell(value) -> str:
+        if value is None:
+            return "—"
+        if isinstance(value, float) and not np.isfinite(value):
+            return "—"
+        return escape(str(value))
+
+    head = "".join(f"<th>{escape(str(col))}</th>" for col in view.columns)
+    rows = []
+    for _, row in view.iterrows():
+        cells = []
+        for col in view.columns:
+            css = ' class="num"' if col in numeric_columns else ""
+            cells.append(f"<td{css}>{cell(row[col])}</td>")
+        rows.append("<tr>" + "".join(cells) + "</tr>")
+    st.markdown(
+        f'<div class="mnz-html-table-wrap"><table class="mnz-html-table" '
+        f'style="min-width:{int(min_width)}px"><thead><tr>{head}</tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody></table></div>',
+        unsafe_allow_html=True,
+    )
+
+
 def price_chart(
     frame: pd.DataFrame,
     *,
     title: str = "",
     overlays: dict[str, pd.Series] | None = None,
+    levels: dict[str, float] | None = None,
     show_volume: bool = True,
     is_sample: bool = False,
     height: int = 430,
 ) -> go.Figure:
-    """Candlestick chart with optional moving-average overlays and volume."""
+    """Candlestick chart with overlays, optional simulated levels and volume."""
     if frame is None or frame.empty:
         fig = go.Figure()
         fig.add_annotation(text="No price data available", showarrow=False,
-                           font=dict(color=COLORS["muted"], size=13))
+                           font=dict(color=MUTED, size=13))
         return _style(fig, height)
 
     has_volume = show_volume and "Volume" in frame and float(frame["Volume"].sum()) > 0
     rows = 2 if has_volume else 1
     fig = make_subplots(
         rows=rows, cols=1, shared_xaxes=True,
-        row_heights=[0.76, 0.24] if has_volume else [1.0],
+        row_heights=[0.78, 0.22] if has_volume else [1.0],
         vertical_spacing=0.04,
     )
     fig.add_trace(
         go.Candlestick(
             x=frame.index, open=frame["Open"], high=frame["High"],
             low=frame["Low"], close=frame["Close"], name="Price",
-            increasing=dict(line=dict(color=COLORS["white"], width=1), fillcolor=COLORS["white"]),
-            decreasing=dict(line=dict(color=COLORS["charcoal_light"], width=1), fillcolor=COLORS["charcoal"]),
+            increasing=dict(line=dict(color=GREEN, width=1), fillcolor=GREEN),
+            decreasing=dict(line=dict(color=RED, width=1), fillcolor=RED),
             showlegend=False,
         ),
         row=1, col=1,
     )
 
+    palette = [GREEN, "#FFFFFF", "#8C93A3", "#5B7CFA"]
     for index, (label, series) in enumerate((overlays or {}).items()):
         fig.add_trace(
             go.Scatter(
                 x=frame.index, y=series, mode="lines", name=label,
-                line=dict(color=[COLORS["line_secondary"], COLORS["white"], COLORS["line_tertiary"]][index % 3],
-                          width=1.3, dash="solid" if index != 0 else "dot"),
-                hovertemplate=f"{label}: %{{y:,.2f}}<extra></extra>",
+                line=dict(color=palette[index % len(palette)], width=1.25,
+                          dash="solid" if index == 0 else "dot"),
+                hovertemplate=f"{label}: %{{y:,.4f}}<extra></extra>",
             ),
             row=1, col=1,
         )
 
+    for label, value in (levels or {}).items():
+        if value is None or not np.isfinite(value):
+            continue
+        color = {"TP": GREEN, "SL": RED}.get(label.split()[0], "#8C93A3")
+        fig.add_hline(y=float(value), row=1, col=1,
+                      line=dict(color=color, width=1, dash="dash"),
+                      annotation_text=label, annotation_position="right",
+                      annotation_font=dict(size=9, color=color))
+
     if has_volume:
-        colors = [
-            COLORS["white"] if close >= open_ else COLORS["charcoal_light"]
-            for close, open_ in zip(frame["Close"], frame["Open"])
-        ]
+        colors = [GREEN if close >= open_ else RED
+                  for close, open_ in zip(frame["Close"], frame["Open"])]
         fig.add_trace(
             go.Bar(x=frame.index, y=frame["Volume"], name="Volume",
-                   marker=dict(color=colors, line=dict(width=0)), showlegend=False),
+                   marker=dict(color=colors, opacity=0.55, line=dict(width=0)),
+                   showlegend=False),
             row=2, col=1,
         )
         fig.update_yaxes(title_text="", row=2, col=1, showgrid=False)
         fig.update_layout(height=height)
 
-    fig.update_layout(
-        xaxis_rangeslider_visible=False,
-        bargap=0.15,
-        hovermode="x unified",
-        margin=dict(l=8, r=8, t=22, b=8),
-    )
+    fig.update_layout(xaxis_rangeslider_visible=False, bargap=0.15,
+                      hovermode="x unified", margin=dict(l=6, r=6, t=22, b=6))
     fig.update_yaxes(side="right", row=1, col=1)
     fig.update_xaxes(showgrid=False)
     fig = _style(fig, height, title or None)
     if is_sample:
-        fig.add_annotation(
-            text="SAMPLE DATA", xref="paper", yref="paper", x=0.5, y=0.55,
-            showarrow=False, font=dict(size=38, color="rgba(255,255,255,0.10)"),
-        )
+        fig.add_annotation(text="SAMPLE DATA", xref="paper", yref="paper", x=0.5, y=0.55,
+                           showarrow=False, font=dict(size=38, color="rgba(240,68,82,0.12)"))
     return fig
 
 
-def momentum_chart(frame: pd.DataFrame, rsi_series: pd.Series, macd_frame: pd.DataFrame,
-                   *, height: int = 320) -> go.Figure:
-    """RSI and MACD stacked beneath the price chart."""
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
-                        row_heights=[0.45, 0.55], vertical_spacing=0.1,
-                        subplot_titles=("RSI (14)", "MACD (12, 26, 9)"))
+def indicator_chart(frame: pd.DataFrame, rsi_series: pd.Series, macd_frame: pd.DataFrame,
+                    adx_frame: pd.DataFrame | None = None, *, height: int = 420) -> go.Figure:
+    """RSI, MACD and ADX stacked below the price chart."""
+    has_adx = adx_frame is not None and not adx_frame.empty
+    fig = make_subplots(
+        rows=3 if has_adx else 2, cols=1, shared_xaxes=True,
+        row_heights=[0.3, 0.4, 0.3] if has_adx else [0.42, 0.58],
+        vertical_spacing=0.07,
+        subplot_titles=("RSI (14)", "MACD (12, 26, 9)", "ADX (14)") if has_adx
+        else ("RSI (14)", "MACD (12, 26, 9)"),
+    )
     fig.add_trace(
         go.Scatter(x=frame.index, y=rsi_series, name="RSI", mode="lines",
-                   line=dict(color=COLORS["white"], width=1.3),
+                   line=dict(color=GREEN, width=1.3),
                    hovertemplate="RSI: %{y:.1f}<extra></extra>"),
         row=1, col=1,
     )
-    fig.add_hline(y=70, line=dict(color=COLORS["charcoal_light"], width=1, dash="dot"), row=1, col=1)
-    fig.add_hline(y=30, line=dict(color=COLORS["charcoal_light"], width=1, dash="dot"), row=1, col=1)
+    fig.add_hline(y=70, line=dict(color="#2F394B", width=1, dash="dot"), row=1, col=1)
+    fig.add_hline(y=30, line=dict(color="#2F394B", width=1, dash="dot"), row=1, col=1)
     fig.update_yaxes(range=[0, 100], row=1, col=1, side="right")
 
-    hist_colors = [COLORS["white"] if value >= 0 else COLORS["charcoal_light"] for value in macd_frame["hist"].fillna(0)]
+    hist_colors = [GREEN if value >= 0 else RED for value in macd_frame["hist"].fillna(0)]
     fig.add_trace(
         go.Bar(x=frame.index, y=macd_frame["hist"], name="Histogram",
-               marker=dict(color=hist_colors, line=dict(width=0))),
+               marker=dict(color=hist_colors, line=dict(width=0)), opacity=0.7),
         row=2, col=1,
     )
     fig.add_trace(
         go.Scatter(x=frame.index, y=macd_frame["macd"], name="MACD",
-                   line=dict(color=COLORS["white"], width=1.4)),
+                   line=dict(color="#FFFFFF", width=1.4)),
         row=2, col=1,
     )
     fig.add_trace(
         go.Scatter(x=frame.index, y=macd_frame["signal"], name="Signal",
-                   line=dict(color=COLORS["line_secondary"], width=1.2, dash="dot")),
+                   line=dict(color="#8C93A3", width=1.2, dash="dot")),
         row=2, col=1,
     )
     fig.update_yaxes(side="right", row=2, col=1)
+
+    if has_adx:
+        fig.add_trace(
+            go.Scatter(x=frame.index, y=adx_frame["adx"], name="ADX",
+                       line=dict(color="#5B7CFA", width=1.3)),
+            row=3, col=1,
+        )
+        fig.add_hline(y=25, line=dict(color="#2F394B", width=1, dash="dot"), row=3, col=1)
+        fig.update_yaxes(range=[0, 60], side="right", row=3, col=1)
     fig.update_xaxes(showgrid=False)
-    fig.update_annotations(font=dict(size=10, color=COLORS["muted"]))
-    fig.update_layout(bargap=0.2, hovermode="x unified", margin=dict(l=8, r=8, t=24, b=8))
+    fig.update_annotations(font=dict(size=10, color=MUTED))
+    fig.update_layout(bargap=0.2, hovermode="x unified", margin=dict(l=6, r=6, t=24, b=6))
     return _style(fig, height)
 
 
 def equity_chart(history: pd.DataFrame, starting_balance: float | None = None,
-                 *, height: int = 320, title: str = "") -> go.Figure:
-    """Virtual equity curve with the starting balance as a dashed reference."""
+                 *, height: int = 300, title: str = "") -> go.Figure:
     fig = go.Figure()
     if history is None or history.empty:
         fig.add_annotation(text="No equity history recorded yet", showarrow=False,
-                           font=dict(color=COLORS["muted"], size=13))
+                           font=dict(color=MUTED, size=13))
         return _style(fig, height, title or None)
     x = history["ts"] if "ts" in history else history.index
     fig.add_trace(go.Scatter(
         x=x, y=history["equity"], mode="lines", name="Equity",
-        line=dict(color=COLORS["white"], width=1.8),
+        line=dict(color=GREEN, width=2),
+        fill="tozeroy", fillcolor="rgba(32,214,138,0.06)",
         hovertemplate="Equity: $%{y:,.2f}<extra></extra>",
     ))
-    # Scale around the recorded equity instead of anchoring at $0: a flat or
-    # near-flat account would otherwise sit on the top edge of the plot.
     values = pd.to_numeric(history["equity"], errors="coerce").dropna()
     if not values.empty:
         low, high = float(values.min()), float(values.max())
         if starting_balance:
             low, high = min(low, float(starting_balance)), max(high, float(starting_balance))
-        span = max(high - low, abs(high) * 0.0015, 1.0)
+        span = max(high - low, abs(high) * 0.002, 1.0)
         pad = span * 0.4
         fig.update_yaxes(range=[low - pad, high + pad])
     if starting_balance:
-        fig.add_hline(y=starting_balance, line=dict(color=COLORS["charcoal_light"], width=1, dash="dot"),
-                      annotation_text="starting balance", annotation_position="top left",
-                      annotation_font=dict(size=9, color=COLORS["muted"]))
+        fig.add_hline(y=starting_balance, line=dict(color="#3B4456", width=1, dash="dot"),
+                      annotation_text="start", annotation_position="top left",
+                      annotation_font=dict(size=9, color=MUTED))
     fig.update_yaxes(side="right", tickprefix="$")
     fig.update_xaxes(showgrid=False)
     return _style(fig, height, title or None)
 
 
-def drawdown_chart(history: pd.DataFrame, *, height: int = 240) -> go.Figure:
+def drawdown_chart(history: pd.DataFrame, *, height: int = 220) -> go.Figure:
     fig = go.Figure()
-    if history is None or history.empty:
-        fig.add_annotation(text="No drawdown history", showarrow=False, font=dict(color=COLORS["muted"]))
+    if history is None or history.empty or "drawdown_pct" not in history:
+        fig.add_annotation(text="No drawdown history", showarrow=False, font=dict(color=MUTED))
         return _style(fig, height)
     x = history["ts"] if "ts" in history else history.index
     fig.add_trace(go.Scatter(
         x=x, y=history["drawdown_pct"], mode="lines", name="Drawdown",
-        line=dict(color=COLORS["line_secondary"], width=1.4),
-        fill="tozeroy", fillcolor="rgba(255,255,255,0.07)",
+        line=dict(color=RED, width=1.3), fill="tozeroy", fillcolor="rgba(240,68,82,0.10)",
         hovertemplate="Drawdown: %{y:.2f}%<extra></extra>",
     ))
     fig.update_yaxes(side="right", ticksuffix="%")
@@ -1002,123 +906,26 @@ def drawdown_chart(history: pd.DataFrame, *, height: int = 240) -> go.Figure:
     return _style(fig, height)
 
 
-def bar_chart(frame: pd.DataFrame, x: str, y: str, *, height: int = 300, horizontal: bool = False,
-              color_by_sign: bool = True, title: str = "") -> go.Figure:
+def bar_chart(frame: pd.DataFrame, x: str, y: str, *, height: int = 280,
+              horizontal: bool = False, color_by_sign: bool = True,
+              title: str = "") -> go.Figure:
     fig = go.Figure()
     if frame is None or frame.empty:
-        fig.add_annotation(text="Nothing to plot", showarrow=False, font=dict(color=COLORS["muted"]))
+        fig.add_annotation(text="Nothing to plot", showarrow=False, font=dict(color=MUTED))
         return _style(fig, height, title or None)
     values = frame[y].astype(float)
-    colors = [
-        COLORS["white"] if value >= 0 else COLORS["charcoal_light"] for value in values.fillna(0)
-    ] if color_by_sign else COLORS["white"]
+    colors = ([GREEN if value >= 0 else RED for value in values.fillna(0)]
+              if color_by_sign else GREEN)
     if horizontal:
         fig.add_trace(go.Bar(x=values, y=frame[x], orientation="h",
                              marker=dict(color=colors, line=dict(width=0)),
                              hovertemplate="%{x:,.2f}<extra></extra>"))
-        fig.update_xaxes(zeroline=True, zerolinecolor=COLORS["charcoal"])
+        fig.update_xaxes(zeroline=True, zerolinecolor="#2F394B")
         fig.update_yaxes(autorange="reversed")
     else:
         fig.add_trace(go.Bar(x=frame[x], y=values,
                              marker=dict(color=colors, line=dict(width=0)),
                              hovertemplate="%{y:,.2f}<extra></extra>"))
-        fig.update_yaxes(zeroline=True, zerolinecolor=COLORS["charcoal"])
+        fig.update_yaxes(zeroline=True, zerolinecolor="#2F394B")
     fig.update_layout(bargap=0.35, showlegend=False)
     return _style(fig, height, title or None)
-
-
-def component_chart(report: AnalystReport, *, height: int = 300) -> go.Figure:
-    """Weighted contribution of each analytical component.
-
-    The reading and weight live in the axis label so bars never collide with
-    annotations, and the axis scales to the actual contributions instead of a
-    fixed ±1 range that would flatten small scores.
-    """
-    rows = [
-        {"Component": c.name, "Score": (c.score or 0.0) * c.weight,
-         "Detail": f"{c.reading} · weight {c.weight:.0%}"}
-        for c in report.components if c.included and c.score is not None and c.kind == "direction"
-    ]
-    fig = bar_chart(pd.DataFrame(rows), "Component", "Score", horizontal=True, height=height)
-    if rows:
-        magnitudes = [abs(float(value)) for value in fig.data[0].x]
-        limit = max([value for value in magnitudes if np.isfinite(value)] + [0.1]) * 1.18
-        fig.update_xaxes(range=[-limit, limit], tickformat=".2f")
-        fig.update_yaxes(automargin=True)
-        details = [row["Detail"] for row in rows]
-        fig.update_traces(
-            customdata=details,
-            hovertemplate="%{y}<br>%{customdata}<br>contribution %{x:.2f}<extra></extra>",
-        )
-    return fig
-
-
-# --------------------------------------------------------------------------- #
-# Analyst report renderer
-# --------------------------------------------------------------------------- #
-def label_pill(label: str) -> str:
-    cls = "nodata"
-    if label == "BUY BIAS":
-        cls = "buy"
-    elif label == "SELL BIAS":
-        cls = "sell"
-    elif label == "WAIT":
-        cls = "wait"
-    return f'<span class="mnz-pill {cls}">{escape(label)}</span>'
-
-
-def render_report(report: AnalystReport, *, show_components: bool = True, show_data_notes: bool = True) -> None:
-    """Render a complete analyst report with its reasoning and data provenance."""
-    st.markdown(
-        f'<div class="mnz-report-head"><span class="sym">{escape(report.symbol)}</span>'
-        f"{label_pill(report.label)}"
-        f'<span class="conf">CONVICTION {report.confidence}% · SCORE {report.score:+.2f} · '
-        f"{escape(report.trend.upper())}</span></div>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        f'<div class="mnz-card" style="margin-bottom:0.8rem">{escape(report.summary)}</div>',
-        unsafe_allow_html=True,
-    )
-
-    if report.label == "NO DATA":
-        for note in report.data_notes:
-            st.caption(note)
-        return
-
-    section("Indicator readings", "what the model measured")
-    html_table(pd.DataFrame(report.readings), min_width=560)
-
-    if show_components:
-        section("Why this label", "weighted evidence")
-        show_chart(component_chart(report, height=max(260, 50 * len(report.components))))
-
-    with st.expander("Reasoning detail", expanded=False):
-        for reason in report.reasons:
-            st.markdown(f"- {reason}")
-        if report.cautions:
-            st.markdown("**Cautions**")
-            for caution in report.cautions:
-                st.markdown(f"- {caution}")
-        st.markdown("**Educational label only.** This is not financial advice, and the model does "
-                    "not know your circumstances, horizon or risk tolerance.")
-
-    if show_data_notes:
-        with st.expander("Data, sources and timestamps", expanded=False):
-            for note in report.data_notes:
-                st.markdown(f"- {note}")
-            st.caption(config.TIME_SOURCE_NOTE)
-
-    if report.is_sample:
-        st.markdown(
-            '<div class="mnz-notice warn"><strong>SAMPLE DATA.</strong> This analysis was produced from a '
-            "synthetic offline series, not live market prices. It demonstrates the interface only.</div>",
-            unsafe_allow_html=True,
-        )
-
-
-def render_context_table(facts: list[tuple[str, str]]) -> None:
-    if not facts:
-        return
-    frame = pd.DataFrame(facts, columns=["Field", "Value"])
-    html_table(frame, min_width=480)

@@ -93,11 +93,33 @@ class DemoAccount:
         notes: str = "",
         strategy: str = "manual",
         when: datetime | None = None,
+        tp: float | None = None,
+        sl: float | None = None,
+        slot: int | None = None,
+        signal_id: int | None = None,
+        timeframe: str = "",
     ) -> tuple[VirtualTrade | None, list[str]]:
-        """Open a simulated position. Returns (trade, problems)."""
+        """Open a simulated position. Returns (trade, problems).
+
+        A slot is only marked as occupied once this call succeeds, because the
+        slot lives on the trade row that is inserted at the end.
+        """
         problems = validate_trade(side, quantity, price, cost_bps)
         if not symbol:
             problems.append("A symbol is required.")
+        if tp is not None and tp <= 0:
+            problems.append("Take profit must be greater than zero.")
+        if sl is not None and sl <= 0:
+            problems.append("Stop loss must be greater than zero.")
+        if tp is not None and sl is not None:
+            if side.lower() == "long" and not (sl < price < tp):
+                problems.append("For a long, the stop must be below entry and the target above it.")
+            if side.lower() == "short" and not (tp < price < sl):
+                problems.append("For a short, the target must be below entry and the stop above it.")
+        if slot is not None:
+            open_slots = {t.slot for t in self.open_positions() if t.slot}
+            if slot in open_slots:
+                problems.append(f"Slot {slot} is already occupied by an open simulated position.")
         notional = float(quantity) * float(price)
         equity = self.equity({})
         if notional > max(equity, 1.0) * MAX_NOTIONAL_MULTIPLE:
@@ -123,6 +145,11 @@ class DemoAccount:
             "status": "open",
             "notes": notes,
             "strategy": strategy,
+            "tp": tp,
+            "sl": sl,
+            "slot": slot,
+            "signal_id": signal_id,
+            "timeframe": timeframe,
         })
         self.db.update_cash(self.id, new_cash)
         self.refresh()
@@ -170,6 +197,83 @@ class DemoAccount:
         self.db.update_cash(self.id, new_cash)
         self.refresh()
         return VirtualTrade.from_row(row), []
+
+    def close_by_signal_id(self, signal_id: int, price: float, *, reason: str = "signal") -> tuple[VirtualTrade | None, list[str]]:
+        for trade in self.open_positions():
+            if trade.signal_id == signal_id:
+                return self.close_position(trade.id, price, reason=reason)
+        return None, ["No open simulated position is linked to that signal."]
+
+    def close_stale(
+        self,
+        marks: dict[str, float] | None = None,
+        *,
+        max_age_days: float = config.DEMO_MAX_OPEN_DAYS,
+    ) -> list[dict]:
+        """Close simulated positions that have been open too long.
+
+        There is no scheduler on the host, so this runs when the Demo section is
+        opened. A position without a current mark is left open rather than
+        closed at an invented price.
+        """
+        marks = marks or {}
+        results: list[dict] = []
+        for trade in self.open_positions():
+            age = trade.holding_days()
+            if age is None or age < max_age_days:
+                continue
+            mark = marks.get(trade.symbol)
+            if mark is None or mark <= 0:
+                results.append({
+                    "trade_id": trade.id, "symbol": trade.symbol,
+                    "result": "skipped", "detail": "No current price available.",
+                })
+                continue
+            done, problems = self.close_position(
+                trade.id, mark,
+                reason=f"auto-closed after {age:.1f} days (simulated)",
+            )
+            results.append({
+                "trade_id": trade.id, "symbol": trade.symbol,
+                "result": "closed" if done else "error",
+                "pnl": done.net_pnl() if done else None,
+                "detail": "; ".join(problems),
+            })
+        return results
+
+    def process_protective_exits(
+        self, marks: dict[str, float] | None = None,
+    ) -> list[dict]:
+        """Close open positions whose last price has crossed their TP or SL.
+
+        Exits are simulated at the level itself. When a single price observation
+        is beyond both levels it cannot be known which was touched first, so the
+        position is left open and reported rather than guessed.
+        """
+        marks = marks or {}
+        closed: list[dict] = []
+        for trade in self.open_positions():
+            mark = marks.get(trade.symbol)
+            if mark is None or trade.tp is None or trade.sl is None:
+                continue
+            long_side = trade.direction > 0
+            hit_tp = mark >= trade.tp if long_side else mark <= trade.tp
+            hit_sl = mark <= trade.sl if long_side else mark >= trade.sl
+            if hit_tp:
+                done, problems = self.close_position(trade.id, trade.tp, reason="simulated TP")
+            elif hit_sl:
+                done, problems = self.close_position(trade.id, trade.sl, reason="simulated SL")
+            else:
+                continue
+            if problems:
+                closed.append({"trade_id": trade.id, "result": "error", "detail": "; ".join(problems)})
+            else:
+                closed.append({
+                    "trade_id": trade.id, "symbol": trade.symbol,
+                    "result": "TP" if hit_tp else "SL",
+                    "pnl": done.net_pnl() if done else None,
+                })
+        return closed
 
     # -- valuation ---------------------------------------------------------- #
     def unrealized_pnl(self, marks: dict[str, float] | None = None) -> float:

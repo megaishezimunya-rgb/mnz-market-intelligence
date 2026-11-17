@@ -108,7 +108,8 @@ def test_persistence_and_reset(db, account):
     assert reloaded.open_positions() == []
     assert reloaded.closed_positions() == []
     assert reloaded.cash == pytest.approx(reloaded.starting_balance)
-    assert reloaded.equity({}) == pytest.approx(config.DEMO_STARTING_BALANCE)
+    # A reset restores this account's own starting balance, not the global default.
+    assert reloaded.equity({}) == pytest.approx(reloaded.starting_balance)
 
 
 def test_portfolio_helpers(account):

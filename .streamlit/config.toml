@@ -1,13 +1,13 @@
 [theme]
 base = "dark"
-primaryColor = "#FFFFFF"
-backgroundColor = "#0A0A0B"
-secondaryBackgroundColor = "#121214"
-textColor = "#F4F4F5"
+primaryColor = "#20D68A"
+backgroundColor = "#090B0F"
+secondaryBackgroundColor = "#151922"
+textColor = "#FFFFFF"
 font = "sans serif"
 
 [client]
-# Navigation is rendered by MNZ itself in the sidebar.
+# Navigation is rendered by MNZ BOT itself (sidebar on desktop, bottom bar on mobile).
 showSidebarNavigation = false
 toolbarMode = "minimal"
 
