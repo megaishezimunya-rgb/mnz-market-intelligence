@@ -272,6 +272,13 @@ def page_login() -> None:
             user, error = state.auth().authenticate(email, password)
             if error or user is None:
                 st.error(error or "Sign-in failed.")
+                if not state.storage_is_durable():
+                    st.warning(
+                        "This deployment is still on temporary storage, so an account "
+                        "created before the last restart no longer exists and cannot "
+                        "sign in. Register again to get a fresh demo account; accounts "
+                        "only stay permanent once the owner adds the DATABASE_URL secret."
+                    )
             else:
                 token = state.auth().start_session(int(user["id"]))
                 state.sign_in(user, token)
