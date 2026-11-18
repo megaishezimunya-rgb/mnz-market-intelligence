@@ -15,8 +15,32 @@ import ui
 from data import market_data
 from database.database import DELIVERY_HISTORY_LIMIT
 
+_SAVED_KEY = "_mnz_settings_saved"
+
+
+# --------------------------------------------------------------------------- #
+# Save confirmations
+# --------------------------------------------------------------------------- #
+def _saved_here(tab: str) -> None:
+    """Render a queued confirmation inside the tab that produced it."""
+    item = st.session_state.get(_SAVED_KEY)
+    if isinstance(item, tuple) and item[0] == tab:
+        st.session_state.pop(_SAVED_KEY, None)
+        st.success(item[1])
+
+
+def _confirm(tab: str, message: str) -> None:
+    """Queue a confirmation and rerun without disturbing the active tab.
+
+    The app-level flash lives above ``st.tabs``; rendering it there resets the
+    tab strip to Profile on the next run, so Settings confirms in place.
+    """
+    st.session_state[_SAVED_KEY] = (tab, message)
+    st.rerun()
+
 
 def _profile_tab() -> None:
+    _saved_here("profile")
     user = state.require_user()
     profile = state.profile()
     ui.section("User profile", "stored against your account")
@@ -37,8 +61,7 @@ def _profile_tab() -> None:
             state.get_database().update_user(int(user["id"]), name=name.strip())
             state.save_profile({"name": name.strip(), "experience": experience})
             state.refresh_user()
-            ui.flash("Profile saved.")
-            st.rerun()
+            _confirm("profile", "Profile saved.")
 
     ui.kpi_row([
         {"label": "Account", "value": "Starter (demo)", "note": "Billing is not implemented"},
@@ -50,6 +73,7 @@ def _profile_tab() -> None:
 
 
 def _notifications_tab() -> None:
+    _saved_here("notifications")
     user = state.require_user()
     prefs = state.notifications()
     ui.section("Notifications", "which Smart Alerts are created and saved")
@@ -74,8 +98,7 @@ def _notifications_tab() -> None:
             "min_strength": strength, "min_quality": int(quality),
             "telegram": bool(telegram),
         })
-        ui.flash("Notification preferences saved.")
-        st.rerun()
+        _confirm("notifications", "Notification preferences saved.")
     delivery = notifications.delivery_status()
     if delivery["telegram_configured"]:
         ui.notice(
@@ -169,6 +192,7 @@ def _notifications_tab() -> None:
 
 
 def _display_tab() -> None:
+    _saved_here("display")
     display = state.display()
     ui.section("Display preferences", "applies across the platform")
     categories = [key for key in config.MARKETS]
@@ -199,8 +223,7 @@ def _display_tab() -> None:
             "compact": compact,
             "allow_sample": sample,
         })
-        ui.flash("Display preferences saved.")
-        st.rerun()
+        _confirm("display", "Display preferences saved.")
     if sample:
         ui.notice(
             "Offline sample data is enabled. Charts will be watermarked and the Safety Guard will "
@@ -210,6 +233,7 @@ def _display_tab() -> None:
 
 
 def _demo_tab(account) -> None:
+    _saved_here("demo")
     safety = state.safety()
     ui.section("Demo account and Safety Guard", "virtual money only")
     ui.kpi_row([
@@ -227,8 +251,7 @@ def _demo_tab(account) -> None:
         saved = st.form_submit_button("Save demo settings")
     if saved:
         state.save_safety({"max_slots": int(slots), "risk_pct": float(risk)})
-        ui.flash("Demo settings saved.")
-        st.rerun()
+        _confirm("demo", "Demo settings saved.")
     st.caption(
         "A slot is occupied only after a simulated position is successfully created. "
         "The risk setting sizes entries from the distance to the simulated stop."
@@ -242,8 +265,7 @@ def _demo_tab(account) -> None:
         else:
             state.get_database().reset_account(account.id)
             state.reload_account()
-            ui.flash("Demo account reset to its starting balance. Saved signals were kept.")
-            st.rerun()
+            _confirm("demo", "Demo account reset to its starting balance. Saved signals were kept.")
 
 
 def _help_tab() -> None:
@@ -308,6 +330,7 @@ def _compatibility_tab() -> None:
 
 
 def _data_tab(account) -> None:
+    _saved_here("data")
     ui.section("Market data connection", "monitored, not assumed")
     provider = market_data.provider_status()
     health = state_ping = st.session_state.get("mnz_connection")
@@ -329,8 +352,7 @@ def _data_tab(account) -> None:
         st.rerun()
     if c2.button("Clear data cache", key="settings_cache", type="secondary"):
         market_data.clear_cache()
-        ui.flash("Cached provider responses cleared.")
-        st.rerun()
+        _confirm("data", "Cached provider responses cleared.")
     st.caption(f"Provider: {config.DATA_SOURCE_NAME} · cache TTL {config.DATA_CACHE_TTL_SECONDS}s · "
                f"delayed feed. {config.TIME_SOURCE_NOTE}")
 
