@@ -75,6 +75,10 @@ def test_warning_shown_before_signing_in(sqlite_env, page):
     rendered = _markdown(at)
     assert WARNING in rendered
     assert "can be erased" in rendered
+    # The banner has to say how the owner makes storage durable, not just that it is not.
+    assert "neon.tech" in rendered
+    assert "DATABASE_URL" in rendered
+    assert "Settings" in rendered
 
 
 def test_warning_stays_off_marketing_pages(sqlite_env):

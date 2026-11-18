@@ -146,18 +146,31 @@ SQLite file, so accounts, demo positions and delivery history reset. The app use
 default and automatically switches to PostgreSQL when a `DATABASE_URL` is present — no code
 change and no extra flag.
 
-**PostgreSQL (recommended on Streamlit Cloud).** Create a free database at a managed provider
-(Neon, Supabase, Railway, Render), copy its connection string, and add it in
-**App → Settings → Secrets**:
+#### Neon + Streamlit Cloud, step by step
 
-```toml
-DATABASE_URL = "postgresql://user:password@host/dbname?sslmode=require"
-```
+Neon is the cheapest path (free plan, no card). Any managed Postgres works the same way.
+
+1. Sign in at [neon.tech](https://neon.tech) and create a project — pick the region closest to
+   your Streamlit app.
+2. Open the project's **Connect** panel and copy the **connection string**. Take the pooled
+   `-pooler` host; it already ends with `?sslmode=require`.
+3. In Streamlit Cloud open your app → **Manage app** → **Settings** → **Secrets**, paste one line
+   (keep the quotes — the file is TOML), then **Save**:
+
+   ```toml
+   DATABASE_URL = "postgresql://user:password@ep-xxx-pooler.region.aws.neon.tech/neondb?sslmode=require"
+   ```
+
+4. Streamlit reboots the app. On the first connection the app creates the schema, indexes and
+   constraints; no manual SQL and no extra package (`psycopg[binary,pool]` is already in
+   `requirements.txt`).
+5. Confirm: Settings → Help Centre → Account and data shows **PostgreSQL (durable)** and the red
+   *Temporary storage* banner is gone. To rotate credentials later, paste the new string in the
+   same field — nothing else changes.
 
 Root-level Streamlit secrets are exported as environment variables, which is how the app reads
-it. Reboot the app; the schema, indexes and constraints are created on first connection, and
-Settings → Help Centre → Account and data shows **PostgreSQL (durable)**. `postgres://` URLs are
-normalised to `postgresql://`, and TLS is controlled by the provider's `sslmode` parameter.
+`DATABASE_URL`. `postgres://` URLs are normalised to `postgresql://`, and TLS is controlled by
+the provider's `sslmode` parameter.
 
 Data already in a local SQLite file is **not** moved automatically. Carry it over once, from a
 machine that still has the file (Streamlit's container loses it on restart), before you switch

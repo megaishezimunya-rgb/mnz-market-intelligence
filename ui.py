@@ -523,8 +523,12 @@ def temporary_storage_notice() -> None:
         "kept in a local file on this server, so they can be erased when the app restarts, "
         "sleeps or redeploys. Treat everything here as disposable and do not rely on it to "
         "keep records."
-        "<br><small>Storage becomes permanent once the owner configures a "
-        "<code>DATABASE_URL</code> PostgreSQL secret.</small>",
+        "<br><small><strong>Owner: make storage permanent.</strong> Create a free PostgreSQL "
+        "database at <a href=\"https://neon.tech\" target=\"_blank\">neon.tech</a>, copy its "
+        "connection string, then save it in Streamlit Cloud under "
+        "<em>Manage app → Settings → Secrets</em> as "
+        "<code>DATABASE_URL = &#34;postgresql://…?sslmode=require&#34;</code>. The app restarts on "
+        "PostgreSQL and this banner disappears. Full steps: README → Durable storage.</small>",
         "warn",
     )
 
