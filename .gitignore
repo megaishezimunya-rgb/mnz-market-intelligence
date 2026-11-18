@@ -28,3 +28,7 @@ artifacts/
 mnz-bot-v2.zip
 gh_login.log
 .gh_login.pid
+
+# local secrets (DATABASE_URL for local runs)
+.env
+.env.*
