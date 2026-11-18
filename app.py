@@ -120,4 +120,6 @@ def render_mobile_nav(current: str) -> None:
 page = render_sidebar()
 render_mobile_nav(page)
 ui.pop_flash()
+if not state.storage_is_durable():
+    ui.temporary_storage_notice()
 PAGE_RENDERERS[page]()

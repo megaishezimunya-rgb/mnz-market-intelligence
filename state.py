@@ -50,6 +50,11 @@ def auth() -> AuthService:
     return AuthService(get_database())
 
 
+def storage_is_durable() -> bool:
+    """True only when PostgreSQL backs the app; SQLite may live on ephemeral disk."""
+    return get_database().backend == "PostgreSQL"
+
+
 def bootstrap() -> None:
     """Restore a session from the URL token, if one is present and valid."""
     if st.session_state.get("_mnz_bootstrapped"):

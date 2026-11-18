@@ -27,3 +27,4 @@ artifacts/
 # local packaging + auth logs
 mnz-bot-v2.zip
 gh_login.log
+.gh_login.pid

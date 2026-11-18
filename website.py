@@ -371,6 +371,9 @@ def render() -> None:
         st.session_state["public_page"] = nav
         st.rerun()
 
+    if page in ("Login", "Register") and not state.storage_is_durable():
+        ui.temporary_storage_notice()
+
     RENDERERS[page]()
 
     st.markdown(

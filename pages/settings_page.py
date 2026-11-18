@@ -355,10 +355,12 @@ def _data_tab(account) -> None:
             "survive restarts and redeploys."
         )
     else:
-        st.caption(
-            "This server is using the local SQLite file, which Streamlit Community Cloud wipes on "
-            "restart or redeploy. Add a PostgreSQL connection string as the DATABASE_URL secret "
-            "to keep accounts, demo positions and delivery history."
+        ui.notice(
+            "<strong>Temporary storage.</strong> This server is using its local SQLite file, "
+            "which Streamlit Community Cloud erases on restart or redeploy — accounts, demo "
+            "positions and delivery history will be lost. Add a PostgreSQL connection string "
+            "as the <code>DATABASE_URL</code> secret to make storage durable.",
+            "warn",
         )
 
     ui.section("Session", "")

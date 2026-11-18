@@ -516,6 +516,19 @@ def notice(text: str, kind: str = "info") -> None:
     st.markdown(f'<div class="{cls}">{text}</div>', unsafe_allow_html=True)
 
 
+def temporary_storage_notice() -> None:
+    """Warn that accounts and demo records sit on storage that can be wiped."""
+    notice(
+        "<strong>Temporary storage.</strong> Accounts, demo positions and alert history are "
+        "kept in a local file on this server, so they can be erased when the app restarts, "
+        "sleeps or redeploys. Treat everything here as disposable and do not rely on it to "
+        "keep records."
+        "<br><small>Storage becomes permanent once the owner configures a "
+        "<code>DATABASE_URL</code> PostgreSQL secret.</small>",
+        "warn",
+    )
+
+
 def empty_state(message: str, hint: str = "") -> None:
     st.markdown(
         f'<div class="mnz-notice warn">{escape(message)}'
