@@ -106,6 +106,39 @@ def test_authenticated_pages_render(app_env):
         assert f"<h1>{HEADINGS[page]}</h1>" in _markdown(at), f"{page} heading missing"
 
 
+def test_sidebar_radio_navigates(app_env):
+    _, user = app_env
+    at = _signed_in(user)
+    at.run()
+    assert "<h1>Home</h1>" in _markdown(at)
+
+    at.radio[0].set_value("Signals")
+    at.run()
+    assert not at.exception, at.exception
+    assert "<h1>Signals</h1>" in _markdown(at)
+
+    at.radio[0].set_value("Settings")
+    at.run()
+    assert not at.exception, at.exception
+    assert "<h1>Settings</h1>" in _markdown(at)
+
+
+def test_mobile_nav_buttons_navigate(app_env):
+    _, user = app_env
+    at = _signed_in(user)
+    at.run()
+
+    at.button(key="mnav_Signals").click()
+    at.run()
+    assert not at.exception, at.exception
+    assert "<h1>Signals</h1>" in _markdown(at)
+
+    at.button(key="mnav_Demo").click()
+    at.run()
+    assert not at.exception, at.exception
+    assert "<h1>Demo</h1>" in _markdown(at)
+
+
 def test_mobile_navigation_has_all_six_sections(app_env):
     _, user = app_env
     at = _signed_in(user)

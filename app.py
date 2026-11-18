@@ -62,9 +62,18 @@ MOBILE_LABELS = {
 # --------------------------------------------------------------------------- #
 # Desktop sidebar
 # --------------------------------------------------------------------------- #
+def _select_page() -> None:
+    """Copy a sidebar choice into the page state before the rerun renders."""
+    choice = st.session_state.get("nav_radio")
+    if choice in config.NAV_ITEMS:
+        st.session_state["mnz_page"] = choice
+
+
 def render_sidebar() -> str:
     current = state.current_page()
-    # Keep the radio widget in sync when navigation came from a button.
+    # Keep the radio in sync only when a button or shortcut changed the page.
+    # The widget's own value is the user's click, so it must never be overwritten
+    # with the stale page here.
     if st.session_state.get("nav_radio") != current:
         st.session_state["nav_radio"] = current
 
@@ -73,7 +82,7 @@ def render_sidebar() -> str:
         st.markdown('<div class="mnz-nav-caption">Workspace</div>', unsafe_allow_html=True)
         selection = st.radio(
             "Navigation", config.NAV_ITEMS, key="nav_radio",
-            label_visibility="collapsed",
+            label_visibility="collapsed", on_change=_select_page,
         )
 
         user = state.current_user() or {}
