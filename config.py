@@ -460,6 +460,9 @@ ALERT_MIN_QUALITY = 65
 ALERT_STRENGTHS = ["Strong", "Moderate"]
 ALERT_MAX_PER_DAY = 12
 
+# Resolved signals needed before a calibration group is treated as meaningful.
+CALIBRATION_MIN_SAMPLE = 10
+
 # --------------------------------------------------------------------------- #
 # Planned compatibility targets — never shown as connected unless verified.
 # --------------------------------------------------------------------------- #

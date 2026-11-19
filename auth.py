@@ -12,8 +12,11 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import math
 import re
 import secrets
+import threading
+import time
 from datetime import timedelta
 
 import config
@@ -53,6 +56,69 @@ def _token_hash(token: str) -> str:
 
 def normalise_email(email: str) -> str:
     return (email or "").strip().lower()
+
+
+def valid_email(email: str) -> bool:
+    return bool(_EMAIL_RE.match(normalise_email(email)))
+
+
+# --------------------------------------------------------------------------- #
+# Failed-attempt throttling
+# --------------------------------------------------------------------------- #
+class AttemptThrottle:
+    """Exponential backoff after repeated failed sign-in or registration attempts.
+
+    State is per server process, keyed by the normalised email address. A
+    restart clears it; that is acceptable here because the goal is to slow down
+    online guessing, not to keep a permanent abuse ledger.
+    """
+
+    free_attempts = 5
+    base_delay = 30.0
+    max_delay = 900.0
+    decay = 900.0
+
+    def __init__(self, clock=time.monotonic) -> None:
+        self._clock = clock
+        self._state: dict[str, tuple[int, float]] = {}
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _key(email: str) -> str:
+        return normalise_email(email) or "unknown"
+
+    def retry_after(self, email: str) -> int:
+        """Seconds the caller must wait, or 0 when the attempt may proceed."""
+        key = self._key(email)
+        with self._lock:
+            count, last = self._state.get(key, (0, 0.0))
+            if count <= self.free_attempts:
+                return 0
+            delay = min(self.base_delay * 2 ** (count - self.free_attempts - 1), self.max_delay)
+            remaining = delay - (self._clock() - last)
+            return int(math.ceil(remaining)) if remaining > 0 else 0
+
+    def record_failure(self, email: str) -> int:
+        """Count one failure and return the new wait time in seconds."""
+        key = self._key(email)
+        now = self._clock()
+        with self._lock:
+            count, last = self._state.get(key, (0, now))
+            if now - last > self.decay:
+                count = 0
+            self._state[key] = (count + 1, now)
+        return self.retry_after(email)
+
+    def clear(self, email: str) -> None:
+        with self._lock:
+            self._state.pop(self._key(email), None)
+
+    def reset(self) -> None:
+        with self._lock:
+            self._state.clear()
+
+
+throttle = AttemptThrottle()
 
 
 def validate_registration(name: str, email: str, password: str,

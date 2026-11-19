@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+import auth
 import config
 import state
 import ui
@@ -277,25 +278,39 @@ def page_login() -> None:
             submitted = st.form_submit_button("Sign in")
         retry = st.session_state.pop("_mnz_login_retry", False)
         if submitted or retry:
-            try:
-                user, error = state.auth().authenticate(email, password)
-                token = state.auth().start_session(int(user["id"])) if user and not error else None
-            except DatabaseUnavailable as exc:
-                _storage_down(exc, "login")
+            wait = auth.throttle.retry_after(email)
+            if wait:
+                st.warning(
+                    f"Too many failed sign-in attempts for this email. "
+                    f"Try again in {wait} second(s)."
+                )
             else:
-                if error or user is None:
-                    st.error(error or "Sign-in failed.")
-                    if not state.storage_is_durable():
-                        st.warning(
-                            "This deployment is still on temporary storage, so an account "
-                            "created before the last restart no longer exists and cannot "
-                            "sign in. Register again to get a fresh demo account; accounts "
-                            "only stay permanent once the owner adds the DATABASE_URL secret."
-                        )
-                elif token:
-                    state.sign_in(user, token)
-                    st.session_state["mnz_page"] = "Home"
-                    st.rerun()
+                try:
+                    user, error = state.auth().authenticate(email, password)
+                    token = state.auth().start_session(int(user["id"])) if user and not error else None
+                except DatabaseUnavailable as exc:
+                    _storage_down(exc, "login")
+                else:
+                    if error or user is None:
+                        wait = auth.throttle.record_failure(email)
+                        st.error(error or "Sign-in failed.")
+                        if wait:
+                            st.warning(
+                                f"New attempts for this email are paused for {wait} second(s) "
+                                "after repeated failures."
+                            )
+                        if not state.storage_is_durable():
+                            st.warning(
+                                "This deployment is still on temporary storage, so an account "
+                                "created before the last restart no longer exists and cannot "
+                                "sign in. Register again to get a fresh demo account; accounts "
+                                "only stay permanent once the owner adds the DATABASE_URL secret."
+                            )
+                    elif token:
+                        auth.throttle.clear(email)
+                        state.sign_in(user, token)
+                        st.session_state["mnz_page"] = "Home"
+                        st.rerun()
         st.caption("No account yet? Use **Register** above.")
     with right:
         st.markdown(
@@ -331,8 +346,15 @@ def page_register() -> None:
             submitted = st.form_submit_button("Create demo account")
         retry = st.session_state.pop("_mnz_register_retry", False)
         if submitted or retry:
-            if not accepted:
+            wait = auth.throttle.retry_after(email)
+            if password != confirm:
+                st.error("The two passwords do not match.")
+            elif not accepted:
                 st.error("Please confirm you understand this is a demo and educational tool.")
+            elif wait:
+                st.warning(
+                    f"Too many failed attempts for this email. Try again in {wait} second(s)."
+                )
             else:
                 try:
                     user, problems = state.auth().register(name, email, password)
@@ -346,9 +368,15 @@ def page_register() -> None:
                     if problems:
                         for problem in problems:
                             st.error(problem)
-                    elif password != confirm:
-                        st.error("The two passwords do not match.")
+                        if auth.valid_email(email):
+                            wait = auth.throttle.record_failure(email)
+                            if wait:
+                                st.warning(
+                                    f"New registration attempts for this email are paused for "
+                                    f"{wait} second(s) after repeated failures."
+                                )
                     elif user is not None and token:
+                        auth.throttle.clear(email)
                         state.sign_in(user, token)
                         st.session_state["mnz_page"] = "Home"
                         st.rerun()

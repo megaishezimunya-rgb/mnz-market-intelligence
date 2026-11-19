@@ -226,27 +226,51 @@ def _performance() -> None:
         "a track record of real trading."
     )
 
-    for key, title, note in [
-        ("timeframe", "Expectancy by timeframe", "does the edge survive across horizons?"),
-        ("quality", "Expectancy by quality band", "does the quality score actually separate outcomes?"),
-        ("instrument", "Expectancy by instrument", "resolved signals only"),
-    ]:
-        rows_breakdown = stats["breakdown"].get(key) or []
-        if not rows_breakdown:
-            continue
-        ui.section(title, note)
-        table = pd.DataFrame([
-            {
-                "Group": item["name"], "Resolved": item["resolved"],
-                "Hit rate %": round(item["hit_rate"], 1) if item["hit_rate"] == item["hit_rate"] else None,
-                "Avg R": round(item["avg_r"], 2) if item["avg_r"] == item["avg_r"] else None,
-            }
-            for item in rows_breakdown
+    measured = signals.calibration(rows)
+    ui.section("Signal Calibration", "measured TP/SL outcomes by market, timeframe and quality")
+    if not measured["resolved"]:
+        ui.notice(
+            "No resolved outcomes yet, so there is nothing to calibrate. A signal only counts "
+            "once later bars actually reach its simulated TP or SL; use “Measure unresolved "
+            "signals” in History after some time has passed."
+        )
+    else:
+        overall = measured["overall"]
+        ui.kpi_row([
+            {"label": "Resolved signals", "value": str(overall["resolved"]),
+             "note": f"minimum sample {measured['min_sample']} per group"},
+            {"label": "TP-first hit rate", "value": ui.pct(overall["hit_rate"], 1),
+             "note": f"{overall['tp_hits']} TP · {overall['sl_hits']} SL"},
+            {"label": "Expectancy",
+             "value": f"{overall['expectancy_r']:+.2f}R" if overall["resolved"] else "n/a",
+             "note": "average R per resolved signal",
+             "trend": 1 if overall["expectancy_r"] > 0 else -1 if overall["expectancy_r"] < 0 else 0},
+            {"label": "Profit factor", "value": ui.number(overall["profit_factor"], 2)},
         ])
-        ui.html_table(table, numeric=["Resolved", "Hit rate %", "Avg R"])
+        for key, title, note in [
+            ("by_market", "By market", "does the edge hold in each market you scan?"),
+            ("by_timeframe", "By timeframe", "does the edge survive across horizons?"),
+            ("by_quality", "By quality band", "does the quality score separate outcomes?"),
+        ]:
+            items = measured.get(key) or []
+            if not items:
+                continue
+            ui.section(title, note)
+            table = pd.DataFrame([
+                {
+                    "Group": item["name"],
+                    "Resolved": item["resolved"],
+                    "TP hit rate %": round(item["hit_rate"], 1) if item["hit_rate"] == item["hit_rate"] else None,
+                    "Expectancy (R)": round(item["expectancy_r"], 2) if item["expectancy_r"] == item["expectancy_r"] else None,
+                    "Profit factor": round(item["profit_factor"], 2) if item["profit_factor"] == item["profit_factor"] else None,
+                    "Sample": "Sufficient" if item["reliable"] else "Too few",
+                }
+                for item in items
+            ])
+            ui.html_table(table, numeric=["Resolved", "TP hit rate %", "Expectancy (R)", "Profit factor"])
         st.caption(
-            f"{int(table['Resolved'].sum())} resolved signals in this breakdown. "
-            "Small samples are unreliable — treat fewer than 20 as indicative only."
+            measured["note"] + " Groups marked “Too few” are shown for transparency, not as an "
+            "edge, and past simulated outcomes never guarantee future results."
         )
 
     frame = common.signal_frame(rows)

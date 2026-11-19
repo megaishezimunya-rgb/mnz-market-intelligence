@@ -629,6 +629,75 @@ def _breakdown(closed: list[dict], key: str) -> list[dict]:
     return sorted(out, key=lambda item: (-item["resolved"], item["name"]))
 
 
+def _bucket_metrics(members: list[dict]) -> dict:
+    """Hit rate, expectancy and profit factor for resolved signals in a group."""
+    r_values = [value for value in (r_multiple(row) for row in members) if value is not None]
+    wins = [value for value in r_values if value > 0]
+    losses = [value for value in r_values if value < 0]
+    return {
+        "resolved": len(r_values),
+        "tp_hits": len(wins),
+        "sl_hits": len(losses),
+        "hit_rate": (len(wins) / len(r_values) * 100) if r_values else float("nan"),
+        "expectancy_r": float(np.mean(r_values)) if r_values else float("nan"),
+        "profit_factor": (
+            sum(wins) / abs(sum(losses)) if losses and sum(losses) else float("nan")
+        ),
+    }
+
+
+def calibration(rows: list[dict], *, min_sample: int | None = None) -> dict:
+    """Measure this account's own signals by market, timeframe and quality band.
+
+    Only signals whose simulated TP or SL was actually reached are counted, so a
+    pending or ambiguous signal can never improve or damage the record. Groups
+    smaller than ``min_sample`` are returned with ``reliable=False`` instead of
+    being hidden or presented as an edge.
+    """
+    threshold = int(min_sample if min_sample is not None else config.CALIBRATION_MIN_SAMPLE)
+    resolved_rows = [
+        row for row in rows
+        if row.get("status") == "Closed" and row.get("outcome") in {"TP hit", "SL hit"}
+    ]
+    directional = [row for row in rows if row.get("label") in {BUY, SELL}]
+
+    def group(key: str, order: list[str] | None = None) -> list[dict]:
+        buckets: dict[str, list[dict]] = {}
+        for row in resolved_rows:
+            if key == "quality":
+                name = quality_band(int(row.get("quality") or 0))
+            else:
+                name = str(row.get(key) or "—")
+            buckets.setdefault(name, []).append(row)
+        names = order if order is not None else sorted(buckets, key=lambda item: (-len(buckets[item]), item))
+        out: list[dict] = []
+        for name in names:
+            members = buckets.get(name) or []
+            if not members:
+                continue
+            item = {"name": name, **_bucket_metrics(members)}
+            item["reliable"] = item["resolved"] >= threshold
+            out.append(item)
+        return out
+
+    overall = _bucket_metrics(resolved_rows)
+    return {
+        "signals": len(rows),
+        "directional": len(directional),
+        "resolved": overall["resolved"],
+        "min_sample": threshold,
+        "overall": overall,
+        "by_market": group("market"),
+        "by_timeframe": group("timeframe"),
+        "by_quality": group("quality", order=["90–100", "75–89", "60–74", "Below 60"]),
+        "note": (
+            "Hit rate counts signals whose simulated TP was reached before the simulated SL. "
+            "Expectancy is the average R per resolved signal (TP near +1.7R at the default "
+            "ATR targets, SL exactly −1R). Groups below the minimum sample are indicative only."
+        ),
+    }
+
+
 def signal_performance(rows: list[dict]) -> dict:
     """Historical performance of stored signals, counting only resolved ones.
 

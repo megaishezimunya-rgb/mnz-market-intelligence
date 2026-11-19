@@ -94,3 +94,74 @@ def test_journal_is_isolated_per_user(tmp_path):
     entry = db.add_journal({"user_id": one["id"], "note": "followed the plan"})
     assert db.list_journal(one["id"])[0]["id"] == entry["id"]
     assert db.list_journal(two["id"]) == []
+
+
+# --------------------------------------------------------------------------- #
+# Failed-attempt throttling
+# --------------------------------------------------------------------------- #
+def _clock(start: float = 1000.0):
+    now = [start]
+    return now, (lambda: now[0])
+
+
+def test_throttle_allows_free_attempts_then_backs_off():
+    from auth import AttemptThrottle
+
+    now, clock = _clock()
+    throttle = AttemptThrottle(clock=clock)
+    for _ in range(5):
+        assert throttle.record_failure("User@Example.com ") == 0
+    assert throttle.retry_after("user@example.com") == 0
+    assert throttle.record_failure("user@example.com") == 30
+    assert throttle.retry_after("user@example.com") == 30
+
+    now[0] += 31
+    assert throttle.retry_after("user@example.com") == 0
+    assert throttle.record_failure("user@example.com") == 60
+
+
+def test_throttle_caps_the_delay_at_fifteen_minutes():
+    from auth import AttemptThrottle
+
+    now, clock = _clock()
+    throttle = AttemptThrottle(clock=clock)
+    for _ in range(20):
+        throttle.record_failure("cap@example.com")
+    assert throttle.retry_after("cap@example.com") == 900
+
+
+def test_success_clears_the_failure_counter():
+    from auth import AttemptThrottle
+
+    now, clock = _clock()
+    throttle = AttemptThrottle(clock=clock)
+    for _ in range(7):
+        throttle.record_failure("reset@example.com")
+    assert throttle.retry_after("reset@example.com") > 0
+    throttle.clear("reset@example.com")
+    assert throttle.retry_after("reset@example.com") == 0
+    assert throttle.record_failure("reset@example.com") == 0
+
+
+def test_quiet_period_decays_the_counter():
+    from auth import AttemptThrottle
+
+    now, clock = _clock()
+    throttle = AttemptThrottle(clock=clock)
+    for _ in range(8):
+        throttle.record_failure("decay@example.com")
+    assert throttle.retry_after("decay@example.com") > 0
+    now[0] += AttemptThrottle.decay + 1
+    assert throttle.retry_after("decay@example.com") == 0
+    assert throttle.record_failure("decay@example.com") == 0
+
+
+def test_throttling_is_per_email_address():
+    from auth import AttemptThrottle
+
+    now, clock = _clock()
+    throttle = AttemptThrottle(clock=clock)
+    for _ in range(8):
+        throttle.record_failure("one@example.com")
+    assert throttle.retry_after("one@example.com") > 0
+    assert throttle.retry_after("two@example.com") == 0

@@ -106,6 +106,9 @@ BUY  ≥ +0.28      SELL ≤ −0.28      otherwise WAIT
 - **Strength** is Strong / Moderate / Weak from quality and magnitude.
 - **Outcomes** are measured later against actual subsequent bars (first touch of TP or SL).
   A bar that touches both is reported as ambiguous/unresolved rather than guessed.
+- **Signal Calibration** groups the account's own resolved signals by market, timeframe and
+  quality band and reports TP-first hit rate, expectancy in R and profit factor. Groups with
+  fewer than 10 resolved signals are labelled *Too few* instead of being presented as an edge.
 - **Safety Guard** shows pass/blocked checks for provider response, real-data status,
   freshness, simulated-only levels and quality.
 
@@ -145,6 +148,10 @@ Every balance, position and result is labelled DEMO.
 - Email + password accounts, PBKDF2-HMAC-SHA256 (210,000 iterations, per-user salt).
 - Session tokens are random, stored only as SHA-256 hashes with a 30-day expiry, and restored
   from the URL so a browser refresh keeps you signed in. Signing out deletes the session.
+- Repeated failed sign-ins or registrations for the same email back off exponentially — five
+  attempts are free, then 30 s, 60 s, 120 s and so on, capped at 15 minutes, and a success
+  clears the counter. The counter lives in the server process and is keyed by email, so a
+  restart clears it; it slows online guessing, not a determined attacker with many addresses.
 - All user data is scoped by `user_id` or `account_id`:
   - `users`, `sessions`, `accounts`, `trades`, `equity_snapshots`
   - `signals`, `alerts`, `journal`, `user_settings`, `backtest_runs`
@@ -271,7 +278,7 @@ Only the newest 50 attempts per account are kept; older rows are pruned on each 
 python -m pytest -q
 ```
 
-Current suite: **156 tests** (154 run by default; the two live PostgreSQL tests are skipped
+Current suite: **168 tests** (166 run by default; the two live PostgreSQL tests are skipped
 unless `MNZ_TEST_DATABASE_URL` is set), covering indicators, backtesting, simulator accounting, engine
 analyst, authentication and data isolation, signal labels/quality/targets/outcomes, scanner
 persistence and alert gating, demo slots and TP/SL, AI grounding, expectancy/breakdowns, stale

@@ -16,3 +16,13 @@ from database.database import Database  # noqa: E402  (after sys.path setup)
 def db(tmp_path):
     """A throwaway SQLite database per test."""
     return Database(tmp_path / "mnz_test.db")
+
+
+@pytest.fixture(autouse=True)
+def _clear_login_throttle():
+    """Failed-login state is process-wide, so every test starts from zero."""
+    from auth import throttle
+
+    throttle.reset()
+    yield
+    throttle.reset()
