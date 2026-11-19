@@ -687,6 +687,21 @@ class Database:
         with self.session() as conn:
             conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
 
+    def delete_user_sessions(self, user_id: int,
+                             keep_token_hash: str | None = None) -> None:
+        """Drop a user's sessions, optionally sparing the one still in use.
+
+        Used when a password changes so a stolen session cannot outlive it.
+        """
+        with self.session() as conn:
+            if keep_token_hash:
+                conn.execute(
+                    "DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?",
+                    (int(user_id), keep_token_hash),
+                )
+            else:
+                conn.execute("DELETE FROM sessions WHERE user_id = ?", (int(user_id),))
+
     def purge_expired_sessions(self) -> None:
         with self.session() as conn:
             conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (_now(),))

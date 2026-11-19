@@ -156,7 +156,8 @@ Every balance, position and result is labelled DEMO.
   counters untouched for seven days are pruned. It slows online guessing, not a determined
   attacker with many addresses.
 - Signed-in users can change their password in Settings → Profile by entering the current one;
-  the existing session stays valid.
+  the change ends every other session for the account, so a stolen session cannot outlive it.
+  The session making the change stays signed in.
 - All user data is scoped by `user_id` or `account_id`:
   - `users`, `sessions`, `accounts`, `trades`, `equity_snapshots`
   - `signals`, `alerts`, `journal`, `user_settings`, `backtest_runs`
@@ -284,12 +285,12 @@ Only the newest 50 attempts per account are kept; older rows are pruned on each 
 python -m pytest -q
 ```
 
-Current suite: **179 tests** (177 run by default; the two live PostgreSQL tests are skipped
+Current suite: **183 tests** (181 run by default; the two live PostgreSQL tests are skipped
 unless `MNZ_TEST_DATABASE_URL` is set), covering indicators, backtesting, simulator accounting, engine
 analyst, authentication and data isolation, signal labels/quality/targets/outcomes, scanner
 persistence and alert gating, demo slots and TP/SL, AI grounding, expectancy/breakdowns, stale
 position cleanup, provider cooldown, backend selection and SQL translation, stored failed-login
-counters and password change, non-blocking
+counters, password change and session revocation, non-blocking
 Telegram delivery (slow send, failing send, full queue), and end-to-end rendering of
 the public site plus all six sections (with a deterministic local feed, no network needed).
 

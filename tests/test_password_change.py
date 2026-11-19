@@ -60,6 +60,48 @@ def test_change_password_updates_the_hash(account):
     assert service.authenticate("change@example.com", "password123")[0] is None
 
 
+def test_change_password_ends_the_accounts_other_sessions(account):
+    db, user = account
+    service = AuthService(db)
+    current = service.start_session(int(user["id"]))
+    stolen = service.start_session(int(user["id"]))
+    older = service.start_session(int(user["id"]))
+
+    assert service.change_password(int(user["id"]), "password123",
+                                   "newpassword456", "newpassword456",
+                                   keep_token=current) == []
+
+    assert service.user_for_token(current) is not None
+    assert service.user_for_token(stolen) is None
+    assert service.user_for_token(older) is None
+
+
+def test_change_password_without_a_keep_token_ends_every_session(account):
+    db, user = account
+    service = AuthService(db)
+    first = service.start_session(int(user["id"]))
+    second = service.start_session(int(user["id"]))
+
+    assert service.change_password(int(user["id"]), "password123",
+                                   "newpassword456", "newpassword456") == []
+
+    assert service.user_for_token(first) is None
+    assert service.user_for_token(second) is None
+
+
+def test_a_failed_change_leaves_sessions_alone(account):
+    db, user = account
+    service = AuthService(db)
+    session = service.start_session(int(user["id"]))
+
+    problems = service.change_password(int(user["id"]), "wrong-password",
+                                       "newpassword456", "newpassword456",
+                                       keep_token=None)
+
+    assert problems == ["Your current password is incorrect."]
+    assert service.user_for_token(session) is not None
+
+
 @pytest.fixture()
 def app_env(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "password.db")
@@ -97,6 +139,31 @@ def test_settings_form_changes_the_password(app_env):
     assert not at.exception, at.exception
     assert any("Password changed" in str(s.value) for s in at.success)
     assert AuthService(db).authenticate("settings@example.com", "newpassword456")[0] is not None
+
+
+def test_settings_form_keeps_the_current_session_and_ends_the_rest(app_env):
+    db, user = app_env
+    service = AuthService(db)
+    current = service.start_session(int(user["id"]))
+    other = service.start_session(int(user["id"]))
+
+    at = AppTest.from_file(APP, default_timeout=90)
+    at.session_state["mnz_user"] = user
+    at.session_state["mnz_token"] = current
+    at.session_state["_mnz_bootstrapped"] = True
+    at.session_state["mnz_page"] = "Settings"
+    at.session_state["nav_radio"] = "Settings"
+    at.run()
+    assert not at.exception, at.exception
+
+    at.text_input(key="password_current").set_value("password123")
+    at.text_input(key="password_new").set_value("newpassword456")
+    at.text_input(key="password_confirm").set_value("newpassword456")
+    next(button for button in at.button if button.label == "Change password").click().run()
+
+    assert not at.exception, at.exception
+    assert service.user_for_token(current) is not None
+    assert service.user_for_token(other) is None
 
 
 def test_settings_form_reports_a_wrong_current_password(app_env):

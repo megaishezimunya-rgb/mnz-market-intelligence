@@ -243,12 +243,14 @@ class AuthService:
         return user, []
 
     def change_password(self, user_id: int, current: str, new: str,
-                        confirm: str | None = None) -> list[str]:
+                        confirm: str | None = None, *,
+                        keep_token: str | None = None) -> list[str]:
         """Replace a password after verifying the existing one.
 
-        Returns the list of problems, empty when the change was applied. The
-        session token is left alone: the person making the change is the one
-        already signed in.
+        Returns the list of problems, empty when the change was applied. Every
+        other session for the account is deleted so a stolen session cannot
+        outlive the password change; ``keep_token`` (the caller's own session)
+        is spared. Without it all sessions end and the user must sign in again.
         """
         user = self.db.get_user(int(user_id))
         problems: list[str] = []
@@ -263,6 +265,9 @@ class AuthService:
         if problems:
             return problems
         self.db.update_user(int(user_id), password_hash=hash_password(new))
+        self.db.delete_user_sessions(
+            int(user_id), keep_token_hash=_token_hash(keep_token) if keep_token else None
+        )
         return []
 
     def authenticate(self, email: str, password: str) -> tuple[dict | None, str | None]:

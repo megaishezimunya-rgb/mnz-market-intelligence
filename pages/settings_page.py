@@ -80,12 +80,16 @@ def _profile_tab() -> None:
                                     key="password_confirm")
         changed = st.form_submit_button("Change password")
     if changed:
-        problems = state.auth().change_password(int(user["id"]), current, new, confirm_new)
+        problems = state.auth().change_password(
+            int(user["id"]), current, new, confirm_new,
+            keep_token=st.session_state.get("mnz_token"),
+        )
         if problems:
             for problem in problems:
                 st.error(problem)
         else:
-            _confirm("profile", "Password changed. Use the new password the next time you sign in.")
+            _confirm("profile", "Password changed. Your other signed-in sessions were ended; "
+                                "use the new password the next time you sign in.")
 
 
 def _notifications_tab() -> None:
