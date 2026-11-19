@@ -53,6 +53,61 @@ def _scan(categories: list[str], timeframe: str) -> None:
     )
 
 
+def _window_label(item: dict) -> str:
+    if item["state"] == "actionable" and item["minutes_left"] is not None:
+        left = int(item["minutes_left"])
+        return f"{left // 60}h {left % 60:02d}m left" if left >= 60 else f"{left}m left"
+    if item["state"] == "expired":
+        return "Expired"
+    return "—"
+
+
+def _trade_plan(latest: list[dict]) -> None:
+    """One line per reading: what to do, where the exits are, how long it holds."""
+    ui.section(
+        "Trade plan",
+        "side, entry, stop and target per reading — and when the plan stops counting",
+    )
+    items = []
+    for row in latest:
+        item = signals.plan(row)
+        item["symbol"] = row.get("symbol", "")
+        items.append(item)
+    order = {"actionable": 0, "waiting": 1, "expired": 2, "closed": 3}
+    items.sort(key=lambda item: order.get(item["state"], 4))
+
+    frame = pd.DataFrame([
+        {
+            "Symbol": item["symbol"],
+            "Bias": item["label"],
+            "Action": item["action"],
+            "Entry ref": item["entry"],
+            "Stop": item["stop"],
+            "Target": item["target"],
+            "R:R": round(item["risk_reward"], 2) if item["risk_reward"] else None,
+            "Valid until (UTC)": (
+                item["valid_until"].strftime("%d %b %H:%M") if item["valid_until"] else None
+            ),
+            "Window": _window_label(item),
+            "State": item["state"],
+        }
+        for item in items
+    ])
+    ui.html_table(frame, numeric=["Entry ref", "Stop", "Target", "R:R"])
+
+    if not any(item["state"] == "actionable" for item in items):
+        ui.notice(
+            "No reading is actionable right now. WAIT is a valid answer: sitting out is a "
+            "position too."
+        )
+    st.caption(
+        "Levels are the ones stored with the signal (entry = the close it was read from, "
+        "stop = 1.5 × ATR, target = 2.6 × ATR). A plan is valid for "
+        f"{config.SIGNAL_VALID_BARS} bars of its own timeframe, then it is expired and needs a "
+        "fresh scan. Nothing is executed anywhere — this is a demo."
+    )
+
+
 def _signal_centre(timeframe: str) -> None:
     user_id = state.require_user()["id"]
     categories = [k for k, cat in config.MARKETS.items() if cat.available]
@@ -99,7 +154,11 @@ def _signal_centre(timeframe: str) -> None:
     for index, row in enumerate(latest[:10]):
         instrument = config.instrument_index().get(row["symbol"])
         with columns[index % 2]:
-            ui.signal_card(row, name=instrument.label if instrument else "")
+            ui.signal_card(
+                row, name=instrument.label if instrument else "", plan=signals.plan(row)
+            )
+
+    _trade_plan(latest)
 
     ui.section("MNZ Safety Guard", "veto checks before a signal is treated as usable")
     options = {f"{row['symbol']} · {row['label']} · {row['timeframe']} · {row['created_at'][:16]}": row

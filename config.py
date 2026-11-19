@@ -394,6 +394,9 @@ MIN_BARS_FOR_ANALYSIS = 210
 # ATR multiples used for simulated targets.
 SIGNAL_SL_ATR = 1.5
 SIGNAL_TP_ATR = 2.6
+# A directional reading is a plan for the next few bars of its own timeframe.
+# After that many bars it is stale and must be re-scanned instead of followed.
+SIGNAL_VALID_BARS = 6
 
 # Per-market signal weights (must sum to 1 for the direction components).
 SIGNAL_WEIGHTS: dict[str, dict[str, float]] = {
@@ -521,7 +524,7 @@ __all__ = [
     "ENGINE_STRATEGY_DEFAULTS", "ANALYST_WEIGHTS", "SIGNAL_WEIGHTS",
     "BUY_THRESHOLD", "SELL_THRESHOLD", "MIN_BARS_FOR_ANALYSIS",
     "SIGNAL_BUY_THRESHOLD", "SIGNAL_SELL_THRESHOLD", "SIGNAL_MIN_BARS",
-    "SIGNAL_SL_ATR", "SIGNAL_TP_ATR", "SCAN_SHORTLIST",
+    "SIGNAL_SL_ATR", "SIGNAL_TP_ATR", "SIGNAL_VALID_BARS", "SCAN_SHORTLIST",
     "DEMO_STARTING_BALANCE", "DEMO_SLOT_CHOICES", "DEMO_DEFAULT_SLOTS", "DEMO_RISK_PCT",
     "DEMO_MAX_OPEN_DAYS",
     "DEFAULT_SIM_COST_BPS", "EQUITY_HISTORY_LIMIT",

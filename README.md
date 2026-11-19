@@ -22,7 +22,7 @@ Works, Pricing, Academy, Support, Login, Register). Signed-in users get six sect
 |---|---|
 | **Home** | Scanner status, monitored categories, latest signals, demo equity, open simulated positions, unread alerts, connection health, upcoming event windows |
 | **Markets** | Scanner (Scan one / Scan all / continuous Start–Pause–Resume–Stop), interactive charts, RSI/MACD/EMA/SMA/Bollinger/ATR/ADX, Strategy Lab (backtests, period comparison, market comparison), Conditions monitor, Economic calendar |
-| **Signals** | Signal Centre, full history with date/instrument/direction filters, measured TP/SL outcomes, performance, Smart Alerts and alert history |
+| **Signals** | Signal Centre with a trade plan (side, entry, stop, target, validity window), full history with date/instrument/direction filters, measured TP/SL outcomes, performance, Smart Alerts and alert history |
 | **Demo** | $100 virtual account, 1/3/5 slots, TP/SL auto-exits, open/closed positions, journal, Performance Centre |
 | **MNZ AI** | Grounded assistant with Beginner/Professional modes over the loaded instrument, stored signal, indicators, demo state and scan conditions |
 | **Settings** | Profile, notifications, display, demo Safety Guard, Help Centre, platform compatibility, data connection and account controls |
@@ -42,7 +42,8 @@ Works, Pricing, Academy, Support, Login, Register). Signed-in users get six sect
   per-user isolation for accounts, signals, alerts, journal and settings.
 - Brand and layout rebuild: `#090B0F` background, `#151922` cards, `#20D68A` / `#F04452`
   indicators, desktop collapsible sidebar, phone bottom navigation.
-- Signal engine with quality score, ATR-based simulated TP/SL, first-touch outcome measurement
+- Signal engine with quality score, ATR-based simulated TP/SL, a timed trade plan (what to do now and
+  for how long), first-touch outcome measurement
   and WAIT gating for stale or sample data.
 - Continuous scanner using Streamlit fragments with real start/pause/resume/stop state.
 - Smart Alerts with thresholds, daily cap, deduplication per bar, and saved history.
@@ -109,6 +110,12 @@ BUY  ≥ +0.28      SELL ≤ −0.28      otherwise WAIT
 - **Signal Calibration** groups the account's own resolved signals by market, timeframe and
   quality band and reports TP-first hit rate, expectancy in R and profit factor. Groups with
   fewer than 10 resolved signals are labelled *Too few* instead of being presented as an edge.
+- **Trade plan.** Every directional reading is also shown as an instruction: side (Buy/Sell),
+  the stored entry reference, stop and target, its reward-to-risk, and how long the plan holds —
+  **6 bars of its own timeframe** (H1 ≈ 6 h, H4 ≈ 24 h, D1 ≈ 6 days). After that window the plan
+  is marked *Expired* and must be replaced by a fresh scan instead of being followed. A WAIT
+  reading shows *Wait* with no levels, and a resolved or ambiguous outcome shows *Done*. The plan
+  repeats the stored levels only; it never re-prices them.
 - **Safety Guard** shows pass/blocked checks for provider response, real-data status,
   freshness, simulated-only levels and quality.
 
@@ -285,12 +292,12 @@ Only the newest 50 attempts per account are kept; older rows are pruned on each 
 python -m pytest -q
 ```
 
-Current suite: **183 tests** (181 run by default; the two live PostgreSQL tests are skipped
+Current suite: **196 tests** (194 run by default; the two live PostgreSQL tests are skipped
 unless `MNZ_TEST_DATABASE_URL` is set), covering indicators, backtesting, simulator accounting, engine
 analyst, authentication and data isolation, signal labels/quality/targets/outcomes, scanner
 persistence and alert gating, demo slots and TP/SL, AI grounding, expectancy/breakdowns, stale
 position cleanup, provider cooldown, backend selection and SQL translation, stored failed-login
-counters, password change and session revocation, non-blocking
+counters, password change and session revocation, trade-plan timing and expiry, non-blocking
 Telegram delivery (slow send, failing send, full queue), and end-to-end rendering of
 the public site plus all six sections (with a deterministic local feed, no network needed).
 

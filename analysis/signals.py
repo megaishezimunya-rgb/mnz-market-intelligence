@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -516,6 +516,99 @@ def _rsi_words(value: float) -> str:
     if value >= 30:
         return "soft momentum"
     return "oversold"
+
+
+# --------------------------------------------------------------------------- #
+# Trade plan: what to do now, and for how long
+# --------------------------------------------------------------------------- #
+def _level(value: float | None) -> str:
+    """A stored price at the precision the signal recorded it with."""
+    rounded = round_price(value)
+    return "n/a" if rounded is None else f"{rounded:,}"
+
+
+def _stamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).replace(tzinfo=None)
+    except (TypeError, ValueError):
+        return None
+
+
+def valid_until(row: dict) -> datetime | None:
+    """When the reading stops being a plan for the coming bars.
+
+    A signal is published against one timeframe, so its window is a fixed
+    number of bars of that same timeframe (``config.SIGNAL_VALID_BARS``).
+    """
+    anchor = _stamp(row.get("created_at")) or _stamp(row.get("bar_time"))
+    if anchor is None:
+        return None
+    horizon = config.SIGNAL_VALID_BARS * config.timeframe(row.get("timeframe")).minutes
+    return anchor + timedelta(minutes=horizon)
+
+
+def plan(row: dict, *, now: datetime | None = None) -> dict:
+    """The stored reading as an instruction: side, entry, stop, target, window.
+
+    Built only from values already stored on the signal — no new prices and no
+    new direction. ``state`` is ``actionable`` (follow the plan now),
+    ``waiting`` (no trade), ``expired`` (window closed: rescan) or ``closed``
+    (the simulated target or stop was already reached).
+    """
+    now = now or config.utcnow()
+    label = row.get("label") or WAIT
+    entry = row.get("entry_ref")
+    stop = row.get("sl")
+    target = row.get("tp")
+    expires = valid_until(row)
+    minutes_left = max(0, int((expires - now).total_seconds() // 60)) if expires else None
+
+    risk_reward = None
+    if entry is not None and stop is not None and target is not None:
+        risk = abs(float(entry) - float(stop))
+        risk_reward = abs(float(target) - float(entry)) / risk if risk else None
+
+    outcome = row.get("outcome") or ""
+    status = row.get("status") or "Open"
+    if label not in {BUY, SELL}:
+        state, action = "waiting", "Wait"
+        summary = "No trade: the reading is WAIT, so there is no entry, stop or target to follow."
+    elif outcome or status in {"Closed", "Unresolved"}:
+        state, action = "closed", "Done"
+        result = outcome or ("ambiguous — TP and SL touched in the same bar"
+                             if status == "Unresolved" else "outcome recorded")
+        summary = f"Closed — {result}. Nothing left to do on this plan."
+    elif entry is None or stop is None or target is None:
+        state, action = "waiting", "Wait"
+        summary = "No levels were stored for this reading, so it is not a usable plan."
+    elif expires is not None and now >= expires:
+        state, action = "expired", "Rescan"
+        summary = (
+            f"Expired — this plan is older than {config.SIGNAL_VALID_BARS} "
+            f"{row.get('timeframe') or config.DEFAULT_TIMEFRAME} bars. Ignore the levels and "
+            "run a fresh scan."
+        )
+    else:
+        state = "actionable"
+        action = "Buy" if label == BUY else "Sell"
+        summary = (
+            f"{action} near {_level(entry)}, stop at {_level(stop)}, "
+            f"target at {_level(target)}."
+        )
+    return {
+        "action": action,
+        "state": state,
+        "label": label,
+        "entry": entry,
+        "stop": stop,
+        "target": target,
+        "risk_reward": risk_reward,
+        "valid_until": expires,
+        "minutes_left": minutes_left,
+        "summary": summary,
+    }
 
 
 # --------------------------------------------------------------------------- #

@@ -678,8 +678,12 @@ def quality_bar(quality: int) -> str:
 
 
 def signal_card(row: dict, *, name: str = "", explanation: str | None = None,
-                show_quality: bool = True) -> None:
-    """Render a stored or freshly built signal."""
+                show_quality: bool = True, plan: dict | None = None) -> None:
+    """Render a stored or freshly built signal.
+
+    ``plan`` is the result of ``signals.plan(row)``: it adds the "what now" line
+    (side, how long the reading still holds, reward-to-risk).
+    """
     label = row.get("label", "WAIT")
     tf = row.get("timeframe", "")
     strength = row.get("strength", "")
@@ -697,6 +701,7 @@ def signal_card(row: dict, *, name: str = "", explanation: str | None = None,
         )
     why = explanation if explanation is not None else row.get("explanation", "")
     evidence = _evidence_line(row)
+    window = _plan_line(plan)
     quality = quality_bar(int(row.get("quality") or 0)) if show_quality else ""
     st.markdown(
         '<div class="mnz-signal"><div class="top">'
@@ -704,9 +709,31 @@ def signal_card(row: dict, *, name: str = "", explanation: str | None = None,
         f'<span class="name">{escape(name)}</span>{strength_pill(strength)}'
         f'<span class="meta">{meta}</span></div>'
         + (f'<div class="why">{escape(str(why))}</div>' if why else "")
-        + evidence + levels + quality + "</div>",
+        + evidence + window + levels + quality + "</div>",
         unsafe_allow_html=True,
     )
+
+
+def _plan_line(plan: dict | None) -> str:
+    """The "what do I do now" line, from the stored levels and the bar window."""
+    if not plan:
+        return ""
+    state = plan.get("state")
+    tone = {"actionable": GREEN, "expired": "#E7B75B"}.get(state, "#8C93A3")
+    bits = [f'<span style="color:{tone};font-weight:600">{escape(str(plan.get("action") or ""))}'
+            "</span>"]
+    expires = plan.get("valid_until")
+    left = plan.get("minutes_left")
+    if state == "actionable" and expires is not None and left is not None:
+        remaining = f"{left // 60}h {left % 60:02d}m" if left >= 60 else f"{left}m"
+        bits.append(f"valid until {expires:%d %b %H:%M} UTC ({remaining} left)")
+    elif state == "expired" and expires is not None:
+        bits.append(f"window closed {expires:%d %b %H:%M} UTC — rescan")
+    elif plan.get("summary"):
+        bits.append(escape(str(plan["summary"])))
+    if plan.get("risk_reward"):
+        bits.append(f"{float(plan['risk_reward']):.1f}:1 reward/risk")
+    return f'<div class="meta">Plan: {" · ".join(bits)}</div>'
 
 
 def _evidence_line(row: dict) -> str:
