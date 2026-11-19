@@ -145,9 +145,18 @@ def _signal_block(ctx: AssistantContext) -> str:
         signal.explanation,
     ]
     if signal.label in {"BUY", "SELL"}:
-        lines.append(
+        target_line = (
             f"\nReference entry **{signal.entry_ref}**, simulated take profit **{signal.tp}**, "
             f"simulated stop loss **{signal.sl}**."
+        )
+        if signal.risk_reward:
+            target_line += f" That is a {signal.risk_reward:.2f}:1 simulated reward-to-risk."
+        lines.append(target_line)
+    confirmations = (signal.metrics or {}).get("confirmations")
+    if confirmations:
+        lines.append(
+            f"\n**{confirmations}** indicator component(s) agree with this reading; MNZ requires "
+            f"at least **{config.SIGNAL_MIN_CONFIRMATIONS}** before publishing a direction."
         )
     if ctx.mode == "Professional" and signal.metrics:
         components = signal.metrics.get("components", {})
@@ -197,6 +206,76 @@ def _conditions_block(ctx: AssistantContext) -> str:
         + (" Some instruments were showing sample data and are excluded from actionable signals."
            if conditions.get("sample") else "")
     )
+
+
+def _number(value, digits: int = 2) -> str:
+    return _num(value, digits) if _has(value) else "n/a"
+
+
+def _best_setups_block(ctx: AssistantContext) -> str:
+    """Rank the stored directional signals that are verified and current.
+
+    The ranking is by stored quality and then score, and it only ranks signals
+    that already exist — it never scans, fetches or invents a setup.
+    """
+    rows = [row for row in ctx.recent_signals if row.get("label") in {"BUY", "SELL"}]
+    verified = [
+        row for row in rows
+        if not row.get("is_sample") and row.get("data_quality") == "current"
+    ]
+    if not verified:
+        if rows:
+            return (
+                "Every stored BUY/SELL reading I can see came from sample or stale data, so I "
+                "won't rank them as setups. Open **Markets** and press **Scan all** on a live "
+                "feed, then ask again."
+            )
+        return (
+            "I have no stored BUY/SELL reading to rank yet. Open **Markets** and press "
+            "**Scan instrument** or **Scan all**; the signal that is stored can then be compared "
+            "with the others on quality, score and reward-to-risk."
+        )
+
+    def quality(row: dict) -> int:
+        try:
+            return int(row.get("quality") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def score(row: dict) -> float:
+        try:
+            return abs(float(row.get("score") or 0.0))
+        except (TypeError, ValueError):
+            return 0.0
+
+    ranked = sorted(verified, key=lambda row: (-quality(row), -score(row)))
+    lines = [
+        f"Ranked by stored quality, then weighted score, across **{len(verified)}** verified "
+        "BUY/SELL reading(s) already in your Signal Centre:",
+        "",
+    ]
+    for index, row in enumerate(ranked[:5], start=1):
+        reward = ""
+        try:
+            entry = float(row["entry_ref"])
+            tp = float(row["tp"])
+            sl = float(row["sl"])
+            if entry and abs(entry - sl) > 0:
+                reward = f", {abs(tp - entry) / abs(entry - sl):.2f}:1 reward-to-risk"
+        except (KeyError, TypeError, ValueError):
+            reward = ""
+        lines.append(
+            f"{index}. **{row.get('symbol', '')}** {str(row.get('label', '')).lower()} on "
+            f"**{row.get('timeframe', '')}** — quality **{quality(row)}/100**, "
+            f"{str(row.get('strength', '')).lower()} strength, score {_number(row.get('score'), 2)}"
+            f"{reward}."
+        )
+    lines.append(
+        "\nQuality ranks how much independent evidence agreed and how clean the data was; it "
+        "is not a probability of profit. These are rule-based readings of delayed data, not "
+        "recommendations, and no order is placed anywhere."
+    )
+    return "\n".join(lines)
 
 
 def _how_to_block() -> str:
@@ -264,6 +343,12 @@ def answer(question: str, ctx: AssistantContext) -> str:
 
     if any(word in text for word in ("risk", "safety", "stop loss", "position size")):
         return _risk_block(ctx)
+
+    if any(word in text for word in (
+        "best setup", "best trade", "best signal", "strongest", "highest quality",
+        "top setup", "top pick", "rank", "opportunit", "which setup", "compare setups",
+    )):
+        return _best_setups_block(ctx)
 
     if any(word in text for word in ("signal", "buy", "sell", "wait", "setup", "trade idea")):
         return _signal_block(ctx)

@@ -44,6 +44,16 @@ def _context(symbol: str, timeframe: str) -> ai.AssistantContext:
         import scanner
 
         conditions = scanner.market_conditions(results)
+    # Latest stored reading per instrument/timeframe, so the assistant can rank
+    # real stored setups instead of guessing at what is on other screens.
+    recent: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for row in db.list_signals(int(user["id"]), limit=150):
+        key = (str(row.get("symbol")), str(row.get("timeframe")))
+        if key in seen:
+            continue
+        seen.add(key)
+        recent.append(row)
     open_trades = account.open_positions()
     marks = common.position_marks(open_trades)
     return ai.AssistantContext(
@@ -57,6 +67,7 @@ def _context(symbol: str, timeframe: str) -> ai.AssistantContext:
         open_positions=len(open_trades),
         closed_positions=len(account.closed_positions(limit=500)),
         conditions=conditions,
+        recent_signals=recent[:20],
         timeframe=timeframe,
         alerts_unread=db.unread_alert_count(int(user["id"])),
     )

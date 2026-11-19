@@ -140,3 +140,42 @@ def test_signal_performance_counts_only_resolved():
     assert stats["hit_rate"] == pytest.approx(50.0)
     assert stats["open"] == 1
     assert stats["directional"] == 3
+
+
+def test_components_must_agree_before_a_direction_is_published():
+    from analysis import signals as engine
+
+    supporting, opposing = engine._confirmations(
+        {"trend": 0.6, "momentum": 0.05, "rsi": -0.4, "structure": 0.3}, 1
+    )
+    assert supporting == ["trend", "structure"]
+    assert opposing == ["rsi"]
+
+
+def test_signal_records_its_confirmation_evidence():
+    closes = np.linspace(100, 150, 320) + np.sin(np.linspace(0, 30, 320)) * 3
+    signal = build_signal(symbol="TEST", market="forex", timeframe="H1",
+                          data=_data(_frame(closes)), settings=config.StrategySettings())
+    assert signal.metrics["confirmations"] >= config.SIGNAL_MIN_CONFIRMATIONS
+    assert "trend" in signal.metrics["supporting"]
+    assert signal.metrics["threshold"] == pytest.approx(config.SIGNAL_BUY_THRESHOLD)
+
+
+def test_direction_needs_two_confirming_components(monkeypatch):
+    monkeypatch.setattr(config, "SIGNAL_MIN_CONFIRMATIONS", 4)
+    closes = np.linspace(100, 150, 320) + np.sin(np.linspace(0, 30, 320)) * 3
+    signal = build_signal(symbol="TEST", market="forex", timeframe="H1",
+                          data=_data(_frame(closes)), settings=config.StrategySettings())
+    assert signal.label == "WAIT"
+    assert any("are required" in warning for warning in signal.warnings)
+
+
+def test_a_ranging_market_demands_a_stronger_score(monkeypatch):
+    monkeypatch.setattr(config, "SIGNAL_RANGE_ADX", 100.0)
+    monkeypatch.setattr(config, "SIGNAL_RANGE_THRESHOLD", 0.99)
+    closes = np.linspace(100, 150, 320) + np.sin(np.linspace(0, 30, 320)) * 3
+    signal = build_signal(symbol="TEST", market="forex", timeframe="H1",
+                          data=_data(_frame(closes)), settings=config.StrategySettings())
+    assert signal.label == "WAIT"
+    assert signal.metrics["adx_weak"] is True
+    assert signal.metrics["threshold"] == pytest.approx(0.99)

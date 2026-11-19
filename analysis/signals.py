@@ -171,6 +171,27 @@ def _structure_score(snap: indicators.IndicatorSnapshot) -> float:
     return float(np.clip((0.6 * di_spread + 0.4 * ma_distance) * trend_weight, -1, 1))
 
 
+def _confirmations(components: dict[str, float], direction: int) -> tuple[list[str], list[str]]:
+    """Split components into those supporting ``direction`` and those opposing it.
+
+    A component only counts as evidence when it is finite and at least
+    ``SIGNAL_CONFIRMATION_FLOOR`` in magnitude, so a near-zero reading is treated
+    as no opinion rather than a confirmation.
+    """
+    supporting: list[str] = []
+    opposing: list[str] = []
+    if direction == 0:
+        return supporting, opposing
+    for name, value in components.items():
+        if not _finite(value) or abs(float(value)) < config.SIGNAL_CONFIRMATION_FLOOR:
+            continue
+        if (float(value) > 0) == (direction > 0):
+            supporting.append(name)
+        else:
+            opposing.append(name)
+    return supporting, opposing
+
+
 def _agreement(components: dict[str, float], weights: dict[str, float]) -> float:
     weighted = [abs(weights[key] * value) for key, value in components.items() if _finite(value)]
     total = sum(weighted)
@@ -186,9 +207,19 @@ def _quality(
     components: dict[str, float],
     weights: dict[str, float],
     score: float,
+    *,
+    confirmations: int = 0,
+    adx_weak: bool = False,
 ) -> int:
     agreement = _agreement(components, weights)
     quality = 35 + 40 * agreement + 25 * min(abs(score) / 0.6, 1.0)
+    # Reward broad agreement and mark the minimum-evidence case down.
+    if confirmations >= 3:
+        quality += 5
+    elif confirmations == config.SIGNAL_MIN_CONFIRMATIONS:
+        quality -= 5
+    if adx_weak:
+        quality -= 8
     if snap.bars < 120:
         quality -= 8
     if snap.volatility_label == "High":
@@ -277,6 +308,13 @@ def build_signal(
     warnings: list[str] = []
     reasons: list[str] = []
     label = WAIT
+    direction = 1 if score >= config.SIGNAL_BUY_THRESHOLD else -1 if score <= config.SIGNAL_SELL_THRESHOLD else 0
+    supporting, opposing = _confirmations(components, direction)
+    adx_weak = _finite(snap.adx) and float(snap.adx) < config.SIGNAL_RANGE_ADX
+    threshold = max(
+        abs(config.SIGNAL_BUY_THRESHOLD),
+        config.SIGNAL_RANGE_THRESHOLD if adx_weak else 0.0,
+    )
     if snap.bars < config.SIGNAL_MIN_BARS:
         warnings.append(
             f"Only {snap.bars} bars are available; at least {config.SIGNAL_MIN_BARS} are needed."
@@ -285,13 +323,25 @@ def build_signal(
         warnings.append("Offline sample data — this reading is a demonstration, not the market.")
     elif data.stale:
         warnings.append("The last bar is older than expected for this timeframe; treat the reading as delayed.")
-    else:
-        if score >= config.SIGNAL_BUY_THRESHOLD:
-            label = BUY
-        elif score <= config.SIGNAL_SELL_THRESHOLD:
-            label = SELL
+    elif direction and abs(score) >= threshold:
+        if len(supporting) < config.SIGNAL_MIN_CONFIRMATIONS:
+            warnings.append(
+                f"Only {len(supporting)} indicator component(s) support a {'BUY' if direction > 0 else 'SELL'} "
+                f"reading; {config.SIGNAL_MIN_CONFIRMATIONS} are required, so this is WAIT."
+            )
+        else:
+            label = BUY if direction > 0 else SELL
+    elif direction and adx_weak:
+        warnings.append(
+            f"The score pointed {'up' if direction > 0 else 'down'}, but ADX is {snap.adx:.1f} "
+            f"(below {config.SIGNAL_RANGE_ADX:.0f}), so the market is ranging. This reading needs "
+            f"|score| ≥ {config.SIGNAL_RANGE_THRESHOLD:.2f} in a range and is WAIT."
+        )
 
-    quality = _quality(snap, data, components, weights, score)
+    quality = _quality(
+        snap, data, components, weights, score,
+        confirmations=len(supporting), adx_weak=adx_weak,
+    )
     strength = _strength(label, quality, score)
     tp, sl = _targets(label, float(data.last_price), snap.atr)
 
@@ -308,6 +358,13 @@ def build_signal(
         reasons.append(f"ADX is {snap.adx:.1f} — {snap.adx_state.lower()}.")
     if _finite(snap.atr_pct):
         reasons.append(f"ATR is {snap.atr_pct:.2f}% of price, a {snap.volatility_label.lower()} volatility regime.")
+    if direction:
+        reasons.append(
+            f"{len(supporting)} of {len(components)} indicator components agree with the "
+            f"{'bullish' if direction > 0 else 'bearish'} score"
+            + (f" ({', '.join(supporting)})" if supporting else "")
+            + (f"; {', '.join(opposing)} disagree." if opposing else ".")
+        )
 
     if label == BUY:
         summary = (
@@ -321,10 +378,22 @@ def build_signal(
         )
     elif snap.bars < config.SIGNAL_MIN_BARS:
         summary = "Not enough history to compute a signal. No direction is assigned."
+    elif direction and abs(score) >= threshold:
+        summary = (
+            f"The weighted score is {score:+.2f}, but only {len(supporting)} indicator component(s) "
+            f"agree with it. {config.SIGNAL_MIN_CONFIRMATIONS} independent components must agree "
+            "before a direction is published, so the reading is WAIT."
+        )
+    elif direction and adx_weak:
+        summary = (
+            f"The weighted score is {score:+.2f}, but ADX is {snap.adx:.1f} — the market is ranging. "
+            f"In a range the same score is weaker evidence, so a direction needs |score| ≥ "
+            f"{config.SIGNAL_RANGE_THRESHOLD:.2f}; this is WAIT."
+        )
     else:
         summary = (
             f"No clear edge: the weighted score ({score:+.2f}) is inside the "
-            f"±{config.SIGNAL_BUY_THRESHOLD:.2f} threshold, so the reading is WAIT."
+            f"±{threshold:.2f} threshold, so the reading is WAIT."
         )
 
     if data.is_sample:
@@ -333,6 +402,11 @@ def build_signal(
     metrics = {
         "components": components,
         "weights": weights,
+        "confirmations": len(supporting),
+        "supporting": supporting,
+        "opposing": opposing,
+        "threshold": round(threshold, 3),
+        "adx_weak": adx_weak,
         "bars": snap.bars,
         "rsi": snap.rsi,
         "adx": snap.adx,
@@ -344,6 +418,8 @@ def build_signal(
         "warnings": warnings,
         "quality_inputs": {
             "agreement": round(_agreement(components, weights), 3),
+            "confirmations": len(supporting),
+            "adx_weak": adx_weak,
             "stale": data.stale,
             "sample": data.is_sample,
         },

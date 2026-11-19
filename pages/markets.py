@@ -26,10 +26,13 @@ def _selected_market() -> str:
 
 
 def _timeframe() -> str:
+    """The timeframe chosen on this screen, falling back to the saved default.
+
+    Browsing a chart must not rewrite the account's default timeframe — that is
+    an explicit preference in Settings → Display.
+    """
     value = st.session_state.get("markets_tf")
     if value in config.TIMEFRAMES:
-        if value != state.display().get("timeframe"):
-            state.save_display({"timeframe": value})
         return value
     return state.current_timeframe()
 

@@ -378,6 +378,15 @@ def timeframe(label: str | None) -> Timeframe:
 SIGNAL_BUY_THRESHOLD = 0.28
 SIGNAL_SELL_THRESHOLD = -0.28
 SIGNAL_MIN_BARS = 60
+# A directional label needs more than one indicator to agree. This is the
+# number of components that must point the same way, and the smallest component
+# reading counted as agreement.
+SIGNAL_MIN_CONFIRMATIONS = 2
+SIGNAL_CONFIRMATION_FLOOR = 0.15
+# In a trendless market the same weighted score is weaker evidence, so the bar
+# for a directional reading is raised instead of lowered.
+SIGNAL_RANGE_ADX = 18.0
+SIGNAL_RANGE_THRESHOLD = 0.45
 BUY_THRESHOLD = SIGNAL_BUY_THRESHOLD
 SELL_THRESHOLD = SIGNAL_SELL_THRESHOLD
 MIN_BARS_FOR_ANALYSIS = 210

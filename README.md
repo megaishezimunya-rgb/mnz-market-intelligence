@@ -93,8 +93,11 @@ BUY  ≥ +0.28      SELL ≤ −0.28      otherwise WAIT
 
 - **Entry reference** is the last verified close.
 - **Simulated SL** is 1.5 × ATR from entry; **TP** is 2.6 × ATR.
+- **Evidence gate.** A direction is published only when at least **two** indicator components
+  point the same way by at least 0.15; one strong reading on its own stays WAIT. When ADX is
+  below 18 the market is ranging, so the bar rises to |score| ≥ 0.45.
 - **Quality (0–100)** combines component agreement, signal magnitude, bar count, volatility
-  regime and freshness. Sample data caps quality at 30.
+  regime, confirmation count and freshness. Sample data caps quality at 30.
 - **Strength** is Strong / Moderate / Weak from quality and magnitude.
 - **Outcomes** are measured later against actual subsequent bars (first touch of TP or SL).
   A bar that touches both is reported as ambiguous/unresolved rather than guessed.
@@ -103,6 +106,11 @@ BUY  ≥ +0.28      SELL ≤ −0.28      otherwise WAIT
 
 Alerts are created only for new directional signals that meet the user's strength and quality
 thresholds, from current data, capped per day and deduplicated per bar.
+
+MNZ AI can rank the stored setups on request (*"which setup is best?"*): it orders the latest
+verified BUY/SELL reading per instrument by quality then score, excludes sample and stale data,
+and quotes the stored entry/TP/SL with reward-to-risk. It ranks what is already stored — it does
+not scan, fetch or invent a setup.
 
 ---
 
@@ -258,7 +266,7 @@ Only the newest 50 attempts per account are kept; older rows are pruned on each 
 python -m pytest -q
 ```
 
-Current suite: **116 tests** (114 run by default; the two live PostgreSQL tests are skipped
+Current suite: **151 tests** (149 run by default; the two live PostgreSQL tests are skipped
 unless `MNZ_TEST_DATABASE_URL` is set), covering indicators, backtesting, simulator accounting, engine
 analyst, authentication and data isolation, signal labels/quality/targets/outcomes, scanner
 persistence and alert gating, demo slots and TP/SL, AI grounding, expectancy/breakdowns, stale

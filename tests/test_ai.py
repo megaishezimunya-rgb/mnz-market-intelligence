@@ -84,3 +84,29 @@ def test_professional_mode_adds_component_detail_when_signal_present():
                     metrics={"components": {"trend": 0.5}, "weights": {"trend": 0.4}})
     pro = ai.answer("Explain the signal", _context(signal=signal, mode="Professional"))
     assert "Component scores" in pro
+
+
+def test_best_setup_answer_ranks_verified_signals_only():
+    rows = [
+        {"symbol": "EURUSD=X", "timeframe": "H1", "label": "BUY", "strength": "Strong",
+         "quality": 88, "score": 0.55, "entry_ref": 1.10, "tp": 1.13, "sl": 1.08,
+         "data_quality": "current", "is_sample": 0},
+        {"symbol": "AAPL", "timeframe": "H1", "label": "SELL", "strength": "Moderate",
+         "quality": 71, "score": -0.35, "entry_ref": 190.0, "tp": 185.0, "sl": 195.0,
+         "data_quality": "current", "is_sample": 0},
+        {"symbol": "BTC-USD", "timeframe": "H1", "label": "BUY", "strength": "Strong",
+         "quality": 95, "score": 0.9, "entry_ref": 1.0, "tp": 2.0, "sl": 0.5,
+         "data_quality": "sample", "is_sample": 1},
+    ]
+    answer = ai.answer("Which setup is the best right now?", _context(recent_signals=rows))
+    assert "EURUSD=X" in answer and "AAPL" in answer
+    assert "BTC-USD" not in answer
+    assert answer.index("EURUSD=X") < answer.index("AAPL")
+    assert "88/100" in answer
+    assert "not recommendations" in answer.lower() or "not a probability" in answer.lower()
+
+
+def test_best_setup_answer_asks_for_a_scan_when_nothing_is_stored():
+    answer = ai.answer("What is the best setup?", _context(recent_signals=[]))
+    assert "Scan instrument" in answer or "Scan all" in answer
+    assert "no stored BUY/SELL" in answer
