@@ -15,7 +15,7 @@ persistent signals, a continuous scanner, a $100 simulated account and a grounde
 
 ## 1. What is in this build
 
-Signed-out visitors see the **public website** (Home, Features, Platform Compatibility, How It
+Signed-out visitors see the **public website** (Home, Features, Platform Compatibility, Broker, How It
 Works, Pricing, Academy, Support, Login, Register). Signed-in users get six sections:
 
 | Section | Contents |
@@ -292,7 +292,7 @@ Only the newest 50 attempts per account are kept; older rows are pruned on each 
 python -m pytest -q
 ```
 
-Current suite: **196 tests** (194 run by default; the two live PostgreSQL tests are skipped
+Current suite: **201 tests** (199 run by default; the two live PostgreSQL tests are skipped
 unless `MNZ_TEST_DATABASE_URL` is set), covering indicators, backtesting, simulator accounting, engine
 analyst, authentication and data isolation, signal labels/quality/targets/outcomes, scanner
 persistence and alert gating, demo slots and TP/SL, AI grounding, expectancy/breakdowns, stale

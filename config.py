@@ -483,7 +483,9 @@ PLANNED_PLATFORMS = [
         "status": "Planned",
         "detail": (
             "Razor Markets is a planned data/execution target. No connection "
-            "exists in this build; no Razor balance or account status is shown."
+            "exists in this build; no Razor balance or account status is shown. "
+            "Its licence claim could not be verified — planned is not an "
+            "endorsement of the operator."
         ),
     },
     {

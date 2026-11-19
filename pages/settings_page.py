@@ -321,6 +321,11 @@ def _help_tab() -> None:
             "No authorised connection exists, so no connection status, balance or account number is "
             "displayed for them. MNZ cannot place orders anywhere."
         )
+        st.write(
+            "A planned integration is not an endorsement of the operator. Razor Markets' claimed "
+            "licence could not be verified — the record sits under **Settings → Platform "
+            "Compatibility → Broker due diligence**, and on the public site's **Broker** page."
+        )
     st.caption("Indicator definitions are also available in MNZ AI and the public Academy.")
 
     for name, text in ai.INDICATOR_HELP.items():
@@ -338,9 +343,29 @@ def _compatibility_tab() -> None:
     ui.notice(
         "Only <strong>Yahoo Finance</strong> is active, and it is a read-only delayed data feed — "
         "not a broker. MT5, Razor Markets and Deriv are planned targets with no connection, no "
-        "credentials and no balances shown.",
+        "credentials and no balances shown. <strong>Planned is not an endorsement:</strong> the "
+        "Razor Markets licence claim could not be verified — see Broker due diligence below.",
         "warn",
     )
+
+    ui.section(
+        "Broker due diligence",
+        f"checked {config.BROKER_VERIFICATION_DATE} · a licence check is not a recommendation",
+    )
+    ui.html_table(
+        pd.DataFrame([
+            {"Broker": row["name"], "Status": row["status"], "What we found": row["found"]}
+            for row in config.BROKER_REVIEW
+        ]),
+        min_width=680,
+    )
+    st.caption(config.BROKER_METHOD)
+    ui.notice(
+        "MNZ earns nothing from any broker and carries no referral link, partner code or paid "
+        "placement. The public site's <strong>Broker</strong> page states the same record, plus "
+        "the standard used and how to check a licence yourself, before anyone signs up."
+    )
+
     ui.section("Device support", "one backend, two layouts")
     ui.html_table(pd.DataFrame([
         {"Platform": "Desktop web", "Experience": "Collapsible sidebar, wide chart workspace, multi-column dashboard"},
