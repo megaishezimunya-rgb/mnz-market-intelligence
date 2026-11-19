@@ -723,10 +723,8 @@ def _plan_line(plan: dict | None) -> str:
     bits = [f'<span style="color:{tone};font-weight:600">{escape(str(plan.get("action") or ""))}'
             "</span>"]
     expires = plan.get("valid_until")
-    left = plan.get("minutes_left")
-    if state == "actionable" and expires is not None and left is not None:
-        remaining = f"{left // 60}h {left % 60:02d}m" if left >= 60 else f"{left}m"
-        bits.append(f"valid until {expires:%d %b %H:%M} UTC ({remaining} left)")
+    if state == "actionable" and expires is not None:
+        bits.append(f"valid until {expires:%d %b %H:%M} UTC ({plan.get('countdown')} left)")
     elif state == "expired" and expires is not None:
         bits.append(f"window closed {expires:%d %b %H:%M} UTC — rescan")
     elif plan.get("summary"):

@@ -563,7 +563,10 @@ def plan(row: dict, *, now: datetime | None = None) -> dict:
     stop = row.get("sl")
     target = row.get("tp")
     expires = valid_until(row)
-    minutes_left = max(0, int((expires - now).total_seconds() // 60)) if expires else None
+    countdown = ""
+    if expires is not None:
+        left = max(0, int((expires - now).total_seconds() // 60))
+        countdown = f"{left // 60}h {left % 60:02d}m" if left >= 60 else f"{left}m"
 
     risk_reward = None
     if entry is not None and stop is not None and target is not None:
@@ -605,8 +608,9 @@ def plan(row: dict, *, now: datetime | None = None) -> dict:
         "stop": stop,
         "target": target,
         "risk_reward": risk_reward,
-        "valid_until": expires,
-        "minutes_left": minutes_left,
+        # A window only means something for a trade that can still be taken.
+        "valid_until": expires if label in {BUY, SELL} else None,
+        "countdown": countdown if label in {BUY, SELL} else "",
         "summary": summary,
     }
 

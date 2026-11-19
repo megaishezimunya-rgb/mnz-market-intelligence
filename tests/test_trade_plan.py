@@ -38,7 +38,7 @@ def test_a_fresh_reading_is_actionable_inside_its_window():
     assert plan["stop"] == 1.0817
     assert plan["target"] == 1.0911
     assert plan["valid_until"] == datetime(2026, 1, 5, 16, 0)
-    assert plan["minutes_left"] == 330
+    assert plan["countdown"] == "5h 30m"
     assert "Buy near 1.085" in plan["summary"]
 
 
@@ -64,7 +64,7 @@ def test_a_reading_past_its_window_is_expired():
 
     assert plan["state"] == "expired"
     assert plan["action"] == "Rescan"
-    assert plan["minutes_left"] == 0
+    assert plan["countdown"] == "0m"
     assert "fresh scan" in plan["summary"]
 
 
@@ -76,6 +76,7 @@ def test_wait_is_not_a_trade_and_has_no_levels_to_follow():
     assert plan["state"] == "waiting"
     assert plan["action"] == "Wait"
     assert plan["entry"] is None and plan["risk_reward"] is None
+    assert plan["valid_until"] is None and plan["countdown"] == ""
 
 
 def test_a_closed_reading_has_nothing_left_to_do():
@@ -115,14 +116,14 @@ def test_the_window_falls_back_to_the_bar_time():
     plan = signals.plan(_row(created_at=None), now=NOW)
 
     assert plan["valid_until"] == datetime(2026, 1, 5, 15, 0)
-    assert plan["minutes_left"] == 270
+    assert plan["countdown"] == "4h 30m"
 
 
 def test_an_unparseable_timestamp_leaves_the_window_unknown():
     plan = signals.plan(_row(created_at="not-a-time", bar_time=""), now=NOW)
 
     assert plan["valid_until"] is None
-    assert plan["minutes_left"] is None
+    assert plan["countdown"] == ""
     assert plan["state"] == "actionable"
 
 

@@ -53,28 +53,17 @@ def _scan(categories: list[str], timeframe: str) -> None:
     )
 
 
-def _window_label(item: dict) -> str:
-    if item["state"] == "actionable" and item["minutes_left"] is not None:
-        left = int(item["minutes_left"])
-        return f"{left // 60}h {left % 60:02d}m left" if left >= 60 else f"{left}m left"
-    if item["state"] == "expired":
-        return "Expired"
-    return "—"
-
-
 def _trade_plan(latest: list[dict]) -> None:
     """One line per reading: what to do, where the exits are, how long it holds."""
     ui.section(
         "Trade plan",
         "side, entry, stop and target per reading — and when the plan stops counting",
     )
-    items = []
-    for row in latest:
-        item = signals.plan(row)
-        item["symbol"] = row.get("symbol", "")
-        items.append(item)
     order = {"actionable": 0, "waiting": 1, "expired": 2, "closed": 3}
-    items.sort(key=lambda item: order.get(item["state"], 4))
+    items = sorted(
+        ({**signals.plan(row), "symbol": row.get("symbol", "")} for row in latest),
+        key=lambda item: order.get(item["state"], 4),
+    )
 
     frame = pd.DataFrame([
         {
@@ -88,7 +77,10 @@ def _trade_plan(latest: list[dict]) -> None:
             "Valid until (UTC)": (
                 item["valid_until"].strftime("%d %b %H:%M") if item["valid_until"] else None
             ),
-            "Window": _window_label(item),
+            "Window": (
+                f"{item['countdown']} left" if item["state"] == "actionable"
+                else "Expired" if item["state"] == "expired" else "—"
+            ),
             "State": item["state"],
         }
         for item in items
