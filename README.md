@@ -150,12 +150,18 @@ Every balance, position and result is labelled DEMO.
   from the URL so a browser refresh keeps you signed in. Signing out deletes the session.
 - Repeated failed sign-ins or registrations for the same email back off exponentially — five
   attempts are free, then 30 s, 60 s, 120 s and so on, capped at 15 minutes, and a success
-  clears the counter. The counter lives in the server process and is keyed by email, so a
-  restart clears it; it slows online guessing, not a determined attacker with many addresses.
+  clears the counter. The counter is keyed by email and stored in the database
+  (`login_attempts`), so a redeploy, a restart or a second server process sees the same
+  backoff instead of handing out fresh attempts. Quiet for 15 minutes resets the count, and
+  counters untouched for seven days are pruned. It slows online guessing, not a determined
+  attacker with many addresses.
+- Signed-in users can change their password in Settings → Profile by entering the current one;
+  the existing session stays valid.
 - All user data is scoped by `user_id` or `account_id`:
   - `users`, `sessions`, `accounts`, `trades`, `equity_snapshots`
   - `signals`, `alerts`, `journal`, `user_settings`, `backtest_runs`
   - `delivery_attempts` (outbound Telegram outcomes, survives restarts)
+  - `login_attempts` (failed sign-in counters per email, survives restarts)
 
 Repository: `database/database.py`. Runtime database: `mnz_data/mnz.db` (git-ignored).
 
@@ -278,11 +284,12 @@ Only the newest 50 attempts per account are kept; older rows are pruned on each 
 python -m pytest -q
 ```
 
-Current suite: **168 tests** (166 run by default; the two live PostgreSQL tests are skipped
+Current suite: **179 tests** (177 run by default; the two live PostgreSQL tests are skipped
 unless `MNZ_TEST_DATABASE_URL` is set), covering indicators, backtesting, simulator accounting, engine
 analyst, authentication and data isolation, signal labels/quality/targets/outcomes, scanner
 persistence and alert gating, demo slots and TP/SL, AI grounding, expectancy/breakdowns, stale
-position cleanup, provider cooldown, backend selection and SQL translation, non-blocking
+position cleanup, provider cooldown, backend selection and SQL translation, stored failed-login
+counters and password change, non-blocking
 Telegram delivery (slow send, failing send, full queue), and end-to-end rendering of
 the public site plus all six sections (with a deterministic local feed, no network needed).
 

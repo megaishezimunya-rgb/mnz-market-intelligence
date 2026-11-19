@@ -65,12 +65,24 @@ def valid_email(email: str) -> bool:
 # --------------------------------------------------------------------------- #
 # Failed-attempt throttling
 # --------------------------------------------------------------------------- #
+def live_database() -> Database | None:
+    """The app's shared database, resolved late to avoid a circular import."""
+    try:
+        import state
+
+        return state.get_database()
+    except Exception:  # noqa: BLE001 - memory fallback is the documented behaviour
+        return None
+
+
 class AttemptThrottle:
     """Exponential backoff after repeated failed sign-in or registration attempts.
 
-    State is per server process, keyed by the normalised email address. A
-    restart clears it; that is acceptable here because the goal is to slow down
-    online guessing, not to keep a permanent abuse ledger.
+    Counts are keyed by the normalised email address and written to the
+    ``login_attempts`` table, so a redeploy or a second worker shares the same
+    backoff instead of handing an attacker a fresh set of free attempts. When
+    the database is unreachable the counter falls back to process memory for
+    that attempt; the stored rows remain the source of truth.
     """
 
     free_attempts = 5
@@ -78,47 +90,100 @@ class AttemptThrottle:
     max_delay = 900.0
     decay = 900.0
 
-    def __init__(self, clock=time.monotonic) -> None:
+    def __init__(self, clock=time.time, store: Database | None = None) -> None:
         self._clock = clock
-        self._state: dict[str, tuple[int, float]] = {}
+        self._store = store
+        self._memory: dict[str, tuple[int, float]] = {}
         self._lock = threading.Lock()
 
     @staticmethod
     def _key(email: str) -> str:
         return normalise_email(email) or "unknown"
 
+    def _database(self) -> Database | None:
+        store = self._store
+        if store is None:
+            return None
+        try:
+            return store() if callable(store) else store  # type: ignore[operator]
+        except Exception:  # noqa: BLE001 - unreadable storage is not a login failure
+            return None
+
+    def _load(self, key: str) -> tuple[int, float]:
+        database = self._database()
+        if database is not None:
+            try:
+                row = database.get_login_attempt(key)
+            except Exception:  # noqa: BLE001 - fall back to memory for this call
+                row = None
+            else:
+                if row is None:
+                    return 0, 0.0
+                return int(row.get("failures") or 0), float(row.get("last_failure") or 0.0)
+        with self._lock:
+            return self._memory.get(key, (0, 0.0))
+
+    def _save(self, key: str, failures: int, moment: float) -> None:
+        with self._lock:
+            self._memory[key] = (failures, moment)
+        database = self._database()
+        if database is None:
+            return
+        try:
+            database.save_login_attempt(key, failures=failures, last_failure=moment)
+        except Exception:  # noqa: BLE001 - the in-memory count still applies
+            pass
+
+    def _delay(self, failures: int) -> float:
+        if failures <= self.free_attempts:
+            return 0.0
+        return min(self.base_delay * 2 ** (failures - self.free_attempts - 1), self.max_delay)
+
     def retry_after(self, email: str) -> int:
         """Seconds the caller must wait, or 0 when the attempt may proceed."""
-        key = self._key(email)
-        with self._lock:
-            count, last = self._state.get(key, (0, 0.0))
-            if count <= self.free_attempts:
-                return 0
-            delay = min(self.base_delay * 2 ** (count - self.free_attempts - 1), self.max_delay)
-            remaining = delay - (self._clock() - last)
-            return int(math.ceil(remaining)) if remaining > 0 else 0
+        failures, last = self._load(self._key(email))
+        if failures <= self.free_attempts:
+            return 0
+        remaining = self._delay(failures) - (self._clock() - last)
+        return int(math.ceil(remaining)) if remaining > 0 else 0
 
     def record_failure(self, email: str) -> int:
         """Count one failure and return the new wait time in seconds."""
         key = self._key(email)
         now = self._clock()
-        with self._lock:
-            count, last = self._state.get(key, (0, now))
-            if now - last > self.decay:
-                count = 0
-            self._state[key] = (count + 1, now)
-        return self.retry_after(email)
+        failures, last = self._load(key)
+        if failures and now - last > self.decay:
+            failures = 0
+        failures += 1
+        self._save(key, failures, now)
+        delay = self._delay(failures)
+        return int(math.ceil(delay)) if delay > 0 else 0
 
     def clear(self, email: str) -> None:
+        key = self._key(email)
         with self._lock:
-            self._state.pop(self._key(email), None)
+            self._memory.pop(key, None)
+        database = self._database()
+        if database is None:
+            return
+        try:
+            database.clear_login_attempt(key)
+        except Exception:  # noqa: BLE001 - a stale count expires on its own
+            pass
 
     def reset(self) -> None:
         with self._lock:
-            self._state.clear()
+            self._memory.clear()
+        database = self._database()
+        if database is None:
+            return
+        try:
+            database.clear_login_attempts()
+        except Exception:  # noqa: BLE001 - nothing to reset when storage is down
+            pass
 
 
-throttle = AttemptThrottle()
+throttle = AttemptThrottle(store=live_database)
 
 
 def validate_registration(name: str, email: str, password: str,
@@ -176,6 +241,29 @@ class AuthService:
             "allow_sample": False,
         })
         return user, []
+
+    def change_password(self, user_id: int, current: str, new: str,
+                        confirm: str | None = None) -> list[str]:
+        """Replace a password after verifying the existing one.
+
+        Returns the list of problems, empty when the change was applied. The
+        session token is left alone: the person making the change is the one
+        already signed in.
+        """
+        user = self.db.get_user(int(user_id))
+        problems: list[str] = []
+        if user is None:
+            return ["This account no longer exists."]
+        if not verify_password(current or "", user["password_hash"]):
+            problems.append("Your current password is incorrect.")
+        if len(new or "") < 8:
+            problems.append("New password must be at least 8 characters.")
+        if confirm is not None and new != confirm:
+            problems.append("The two new passwords do not match.")
+        if problems:
+            return problems
+        self.db.update_user(int(user_id), password_hash=hash_password(new))
+        return []
 
     def authenticate(self, email: str, password: str) -> tuple[dict | None, str | None]:
         user = self.db.get_user_by_email(normalise_email(email))

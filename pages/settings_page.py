@@ -71,6 +71,22 @@ def _profile_tab() -> None:
     ])
     st.caption("Your password is stored as a salted PBKDF2-SHA256 hash, never in plain text.")
 
+    ui.section("Password", "change the password for this local account")
+    with st.form("password_form"):
+        current = st.text_input("Current password", type="password", key="password_current")
+        new = st.text_input("New password", type="password", key="password_new",
+                            help="At least 8 characters.")
+        confirm_new = st.text_input("Confirm new password", type="password",
+                                    key="password_confirm")
+        changed = st.form_submit_button("Change password")
+    if changed:
+        problems = state.auth().change_password(int(user["id"]), current, new, confirm_new)
+        if problems:
+            for problem in problems:
+                st.error(problem)
+        else:
+            _confirm("profile", "Password changed. Use the new password the next time you sign in.")
+
 
 def _notifications_tab() -> None:
     _saved_here("notifications")

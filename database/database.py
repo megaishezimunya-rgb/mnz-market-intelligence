@@ -14,6 +14,7 @@ alerts            smart-alert history and in-app notifications
 journal           intelligent trading journal entries
 backtest_runs     saved backtest summaries for the strategy lab
 delivery_attempts outbound alert-delivery outcomes (survives restarts, capped)
+login_attempts    failed sign-in / registration counters per email (backoff)
 
 Every user-owned row is scoped by ``user_id`` (signals, alerts, journal,
 settings) or by ``account_id`` (trades, snapshots), so one account can never
@@ -180,6 +181,13 @@ CREATE TABLE IF NOT EXISTS journal (
 );
 CREATE INDEX IF NOT EXISTS idx_journal_user ON journal(user_id, created_at);
 
+CREATE TABLE IF NOT EXISTS login_attempts (
+    email_key    TEXT PRIMARY KEY,
+    failures     INTEGER NOT NULL DEFAULT 0,
+    last_failure REAL NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS backtest_runs (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at     TEXT NOT NULL,
@@ -196,6 +204,9 @@ CREATE TABLE IF NOT EXISTS backtest_runs (
 
 # Delivery history is a diagnostic, not an audit log: keep it small.
 DELIVERY_HISTORY_LIMIT = 50
+
+# A failed-attempt counter older than this is noise; it is pruned on write.
+LOGIN_ATTEMPT_RETENTION_SECONDS = 7 * 24 * 60 * 60
 
 TRADE_FIELDS = [
     "id", "account_id", "symbol", "market", "side", "quantity", "entry_price",
@@ -679,6 +690,40 @@ class Database:
     def purge_expired_sessions(self) -> None:
         with self.session() as conn:
             conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (_now(),))
+
+    # ------------------------------------------------------------------ #
+    # Failed sign-in attempts (login and registration backoff)
+    # ------------------------------------------------------------------ #
+    def get_login_attempt(self, email_key: str) -> dict | None:
+        with self.session() as conn:
+            row = conn.execute(
+                "SELECT * FROM login_attempts WHERE email_key = ?",
+                ((email_key or "").strip().lower(),),
+            ).fetchone()
+        return _row_to_dict(row)
+
+    def save_login_attempt(self, email_key: str, *, failures: int, last_failure: float) -> None:
+        key = (email_key or "").strip().lower()
+        cutoff = last_failure - LOGIN_ATTEMPT_RETENTION_SECONDS
+        with self.session() as conn:
+            conn.execute(
+                "INSERT INTO login_attempts (email_key, failures, last_failure, updated_at) "
+                "VALUES (?, ?, ?, ?) ON CONFLICT(email_key) DO UPDATE SET "
+                "failures = excluded.failures, last_failure = excluded.last_failure, "
+                "updated_at = excluded.updated_at",
+                (key, int(failures), float(last_failure), _now()),
+            )
+            # Bounded table: counters nobody has triggered for a week are dropped.
+            conn.execute("DELETE FROM login_attempts WHERE last_failure < ?", (float(cutoff),))
+
+    def clear_login_attempt(self, email_key: str) -> None:
+        with self.session() as conn:
+            conn.execute("DELETE FROM login_attempts WHERE email_key = ?",
+                         ((email_key or "").strip().lower(),))
+
+    def clear_login_attempts(self) -> None:
+        with self.session() as conn:
+            conn.execute("DELETE FROM login_attempts")
 
     # ------------------------------------------------------------------ #
     # Per-user settings

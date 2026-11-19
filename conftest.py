@@ -19,10 +19,16 @@ def db(tmp_path):
 
 
 @pytest.fixture(autouse=True)
-def _clear_login_throttle():
-    """Failed-login state is process-wide, so every test starts from zero."""
+def _clear_login_throttle(monkeypatch):
+    """Failed-login state is process-wide, so every test starts from zero.
+
+    The stored counter is detached for the test run: unit tests must never
+    clear rows in a developer's real database, and tests that check durable
+    counters build their own ``AttemptThrottle(store=db)``.
+    """
     from auth import throttle
 
+    monkeypatch.setattr(throttle, "_store", None)
     throttle.reset()
     yield
     throttle.reset()
