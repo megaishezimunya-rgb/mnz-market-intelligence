@@ -511,6 +511,121 @@ FUTURE_COMMERCIAL: dict[str, str] = {
     "Automated execution": "DISABLED — LIVE_EXECUTION_ENABLED is hard-coded False.",
 }
 
+# --------------------------------------------------------------------------- #
+# Broker due diligence.
+#
+# A licence check is not a recommendation, and a name only appears on the Broker
+# page once these checks have been attempted. Each result records what could be
+# confirmed and what could not, with the date it was checked — never an opinion
+# about whether the firm is "good". No entry here may carry a referral link.
+# --------------------------------------------------------------------------- #
+BROKER_VERIFICATION_DATE = "19 November 2026"
+
+BROKER_METHOD = (
+    "Checked against the FSCA's published provider lists, the operator's own legal "
+    "pages, and third-party regulatory reviews dated October–November 2025. The "
+    "FSCA register itself is a form-based search, so it was not queried "
+    "programmatically — confirm any result yourself before acting on it."
+)
+
+BROKER_STANDARD = [
+    ("01", "Registered entity",
+     "The company name and registration number on the site must belong to a company "
+     "that exists on the CIPC register."),
+    ("02", "FSP number on the register",
+     "The FSP number is looked up on the FSCA register and the exact legal name must "
+     "match — not a similar name, and not a badge on the firm's own site."),
+    ("03", "Licence category",
+     "Category I advice and intermediary services is a different licence to an OTC "
+     "derivative provider. The category decides what the firm may actually do."),
+    ("04", "Representative status",
+     "A firm claiming to act under someone else's licence must appear as an appointed "
+     "juristic representative on that licence."),
+    ("05", "Domain listed",
+     "The FSCA record should name the domain the firm trades on. An unlisted domain "
+     "cannot be tied back to the licence."),
+    ("06", "Counterparty and withdrawals",
+     "Who holds client money, who is the counterparty to your contract, and where a "
+     "complaint goes if a withdrawal stalls."),
+]
+
+# tone: "bad" = could not verify, "warn" = partially verified, "ok" = verified,
+# "info" = not applicable or nothing to verify.
+BROKER_REVIEW = [
+    {
+        "name": "Razor Markets (Pty) Ltd",
+        "claim": (
+            "Reg 2024/605719/07 · claims to be a juristic representative of Sithundhi "
+            "Group (Pty) Ltd under FSP 52030"
+        ),
+        "found": (
+            "Not found on the FSCA register in its own right, and the representative "
+            "appointment plus the razormarkets.co.za domain are not shown against FSP "
+            "52030. An earlier published version of the site's own disclaimer named a "
+            "different licence (FSP 52677) before the live pages switched to 52030."
+        ),
+        "status": "Not verified — we would not fund an account",
+        "tone": "bad",
+    },
+    {
+        "name": "Sithundhi Group (Pty) Ltd",
+        "claim": "FSP 52030 — named by Razor Markets as its principal",
+        "found": (
+            "The number is cited consistently across Razor Markets' current legal pages. "
+            "We could not confirm that Razor Markets is its appointed representative, or "
+            "that the trading domain is listed against the licence."
+        ),
+        "status": "Licence referenced — the link is unconfirmed",
+        "tone": "warn",
+    },
+    {
+        "name": "Elite Financial Services (Pty) Ltd",
+        "claim": "FSP 52677 — named in an earlier version of the Razor Markets disclaimer",
+        "found": (
+            "Listed in the FSCA's own licensed-provider publications as a Category I "
+            "advice and intermediary services provider. Nothing was found connecting it "
+            "to the Razor Markets platform."
+        ),
+        "status": "Licensed entity — no link to the platform",
+        "tone": "info",
+    },
+    {
+        "name": "RocketX (Pty) Ltd",
+        "claim": (
+            "FSP 52142 · ODP 74 · reg 2020/824856/07 — named as counterparty and "
+            "principal for Razor Markets CFD contracts"
+        ),
+        "found": (
+            "RocketX's own disclosure matches: authorised FSP 52142 and OTC derivative "
+            "provider 74. Razor Markets states every CFD contract is with RocketX, so the "
+            "counterparty risk sits there. A licensed counterparty does not make the "
+            "platform itself a licensed broker."
+        ),
+        "status": "Licensed — counterparty risk sits here",
+        "tone": "ok",
+    },
+    {
+        "name": "MetaTrader 5",
+        "claim": "Software terminal — not a broker",
+        "found": (
+            "MetaQuotes licenses the terminal. Your account, your money and the licence "
+            "behind it belong to the broker you connect the terminal to, never to MT5."
+        ),
+        "status": "Not a licence holder",
+        "tone": "info",
+    },
+    {
+        "name": "Deriv",
+        "claim": "No South African licence claim is made by MNZ for Deriv",
+        "found": (
+            "Not assessed. MNZ has no Deriv data connection, so synthetic indices stay "
+            "unavailable regardless of the operator's licensing."
+        ),
+        "status": "Not assessed",
+        "tone": "info",
+    },
+]
+
 LIVE_EXECUTION_NOTICE = (
     "Automated execution is disabled. MNZ never asks for brokerage passwords or "
     "account credentials and contains no order-routing code."
@@ -533,4 +648,5 @@ __all__ = [
     "DB_PATH", "DATABASE_URL", "DATA_DIR", "EXPORT_DIR", "ALLOW_SAMPLE_DATA_FALLBACK",
     "DATA_CACHE_TTL_SECONDS", "STALE_BAR_MINUTES", "TIME_SOURCE_NOTE",
     "LIVE_EXECUTION_ENABLED", "LIVE_EXECUTION_NOTICE", "NAV_ITEMS", "PUBLIC_PAGES",
+    "BROKER_STANDARD", "BROKER_REVIEW", "BROKER_METHOD", "BROKER_VERIFICATION_DATE",
 ]

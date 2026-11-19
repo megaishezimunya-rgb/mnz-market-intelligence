@@ -7,6 +7,8 @@ Marketing copy only claims what the build actually does.
 
 from __future__ import annotations
 
+from html import escape
+
 import streamlit as st
 
 import auth
@@ -15,7 +17,7 @@ import state
 import ui
 from database.database import DatabaseUnavailable
 
-NAV = ["Home", "Features", "Platform Compatibility", "How It Works",
+NAV = ["Home", "Features", "Platform Compatibility", "Broker", "How It Works",
        "Pricing", "Academy", "Support", "Login", "Register"]
 
 
@@ -136,6 +138,103 @@ def page_compatibility() -> None:
             f'<div style="font-size:.8rem;color:#8C93A3;margin-top:.35rem">{category.note}</div></div>',
             unsafe_allow_html=True,
         )
+
+
+def page_broker() -> None:
+    st.markdown(
+        '<div class="mnz-public mnz-hero"><div class="eyebrow">Broker due diligence</div>'
+        "<h1>We check the licence before we name the broker.</h1>"
+        "<p>MNZ is not a broker and earns nothing from one. This page records which "
+        "entities could be verified, which could not, and what that means before you send "
+        "anyone money.</p></div>",
+        unsafe_allow_html=True,
+    )
+    ui.section("Our standard", "six checks before a name appears on this page")
+    checks = "".join(
+        f'<div class="mnz-feature"><div class="icon">{number}</div>'
+        f"<h4>{escape(title)}</h4><p>{escape(body)}</p></div>"
+        for number, title, body in config.BROKER_STANDARD
+    )
+    st.markdown(f'<div class="mnz-public"><div class="mnz-grid">{checks}</div></div>',
+                unsafe_allow_html=True)
+
+    ui.section(
+        "What we found",
+        f"checked {config.BROKER_VERIFICATION_DATE} · a licence check is not a recommendation",
+    )
+    colours = {
+        "bad": config.PALETTE["red"],
+        "warn": "#FFFFFF",
+        "ok": config.PALETTE["green"],
+        "info": config.PALETTE["muted"],
+    }
+    rows = "".join(
+        f"<tr><td><strong>{escape(row['name'])}</strong></td>"
+        f"<td>{escape(row['claim'])}</td>"
+        f"<td>{escape(row['found'])}</td>"
+        f'<td><span style="color:{colours.get(row["tone"], "#FFFFFF")};font-weight:600">'
+        f"{escape(row['status'])}</span></td></tr>"
+        for row in config.BROKER_REVIEW
+    )
+    st.markdown(
+        '<div class="mnz-public"><div class="mnz-html-table-wrap">'
+        '<table class="mnz-html-table" style="background:#151922;min-width:880px">'
+        "<thead><tr><th>Entity</th><th>What is claimed</th><th>What we found</th>"
+        f"<th>Status</th></tr></thead><tbody>{rows}</tbody></table></div>"
+        '<div style="font-size:.72rem;color:#5B657A;line-height:1.7;margin-top:.7rem;'
+        f'max-width:90ch">{escape(config.BROKER_METHOD)}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        '<div class="mnz-public"><div class="mnz-band">'
+        "<h2>Risk notice: derivatives can cost more than your deposit</h2>"
+        "<p>CFDs and OTC derivatives are leveraged. You can lose your entire balance and, "
+        "on some account types, owe more than you deposited. Your contract is with the "
+        "counterparty named in the client agreement — not with the platform you log in "
+        "to, and not with MNZ. A licence regulates conduct: it does not insure a deposit, "
+        "guarantee a withdrawal, or make a strategy profitable.</p>"
+        "<p>Profit screenshots are not a track record. They leave out deposits, open "
+        "drawdown, lot escalation and the accounts that did not survive. If someone shows "
+        "you results, ask for a verified third-party statement with its age and its "
+        "maximum drawdown.</p></div></div>",
+        unsafe_allow_html=True,
+    )
+
+    ui.section("Verify it yourself", "five minutes, before any deposit")
+    steps = [
+        ("01", "Search the register",
+         "fsca.co.za → Regulated entities → Financial Services Providers. Search the FSP "
+         "number and read the legal name printed beside it."),
+        ("02", "Match the entity, not the badge",
+         "The name beside the number must be the company in your client agreement. "
+         "\"Regulated by\" with no matching entity name is a marketing line."),
+        ("03", "Ask for the appointment",
+         "If a firm acts under someone else's licence, request the juristic "
+         "representative appointment in writing and check it against the register."),
+        ("04", "Check the counterparty and the exit",
+         "Confirm who your contract is with, where client funds are held, and what the "
+         "complaint route is if a withdrawal stalls. The FSCA call centre is "
+         "0800 20 37 22."),
+    ]
+    html = "".join(
+        f'<div class="mnz-feature"><div class="icon">{number}</div>'
+        f"<h4>{escape(title)}</h4><p>{escape(body)}</p></div>"
+        for number, title, body in steps
+    )
+    st.markdown(f'<div class="mnz-public"><div class="mnz-grid">{html}</div></div>',
+                unsafe_allow_html=True)
+
+    st.markdown(
+        '<div class="mnz-public"><div class="mnz-band">'
+        "<h2>No referral links. No partner codes. No commission.</h2>"
+        "<p>There is no affiliate link, introducing-broker code, tracked sign-up or paid "
+        "placement anywhere on this page or in MNZ. No broker paid for a mention and none "
+        "of these names earns us anything. If that ever changes, the disclosure will appear "
+        "at the top of this page in the same size text as the claim, above the "
+        "verification date, before any link is added.</p></div></div>",
+        unsafe_allow_html=True,
+    )
 
 
 def page_how() -> None:
@@ -397,6 +496,7 @@ RENDERERS = {
     "Home": page_home,
     "Features": page_features,
     "Platform Compatibility": page_compatibility,
+    "Broker": page_broker,
     "How It Works": page_how,
     "Pricing": page_pricing,
     "Academy": page_academy,
