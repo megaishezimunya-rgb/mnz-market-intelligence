@@ -8,12 +8,17 @@ records.
 
 from __future__ import annotations
 
+import logging
+
 import streamlit as st
 
 import config
 from auth import AuthService
-from database.database import Database
+from database.database import Database, DatabaseUnavailable
 from simulator.demo_account import DemoAccount
+
+LOGGER = logging.getLogger("mnz.storage")
+_LOGGED_STORAGE_ERRORS: set[str] = set()
 
 DEFAULT_NOTIFICATIONS = {
     "enabled": True,
@@ -50,9 +55,31 @@ def auth() -> AuthService:
     return AuthService(get_database())
 
 
+def log_storage_error(exc: BaseException) -> None:
+    """Record the real failure with its traceback, once per distinct message.
+
+    Streamlit reruns the script on every interaction, so an unreachable
+    database would otherwise fill the host log with the same traceback.
+    """
+    key = f"{type(exc).__name__}: {exc}"
+    if key in _LOGGED_STORAGE_ERRORS:
+        return
+    _LOGGED_STORAGE_ERRORS.add(key)
+    LOGGER.error("Account database unavailable: %s", key, exc_info=exc)
+
+
+def storage_state() -> str:
+    """``postgres``, ``sqlite`` or ``unavailable`` — never raises."""
+    try:
+        return "postgres" if get_database().backend == "PostgreSQL" else "sqlite"
+    except DatabaseUnavailable as exc:
+        log_storage_error(exc)
+        return "unavailable"
+
+
 def storage_is_durable() -> bool:
     """True only when PostgreSQL backs the app; SQLite may live on ephemeral disk."""
-    return get_database().backend == "PostgreSQL"
+    return storage_state() == "postgres"
 
 
 def bootstrap() -> None:
@@ -66,7 +93,14 @@ def bootstrap() -> None:
     except Exception:  # pragma: no cover - very old Streamlit query API
         token = None
     if token:
-        user = auth().user_for_token(token)
+        try:
+            user = auth().user_for_token(token)
+        except DatabaseUnavailable as exc:
+            # Do not turn a waking database into an error page for the whole
+            # site: forget the bootstrap flag so the next run retries.
+            log_storage_error(exc)
+            st.session_state.pop("_mnz_bootstrapped", None)
+            return
         if user:
             _remember(user, token)
 

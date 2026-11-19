@@ -209,7 +209,7 @@ def test_pg_pool_reports_a_clear_error_when_unreachable(pg_state, monkeypatch):
     monkeypatch.setattr(database_module, "_pg_probe", probe)
     monkeypatch.setattr(database_module, "_pg_retry", lambda action, **kw: action())
 
-    with pytest.raises(RuntimeError, match="Check DATABASE_URL"):
+    with pytest.raises(database_module.DatabaseUnavailable, match="Check DATABASE_URL"):
         database_module._pg_pool(NEON_POOLED)
     assert not database_module._PG_POOLS
 
@@ -253,7 +253,8 @@ def test_session_turns_a_pool_timeout_into_a_readable_error(pg_state, monkeypatc
     db.backend = "PostgreSQL"
     db.path = None
 
-    with pytest.raises(RuntimeError, match="did not accept a connection in time"):
+    with pytest.raises(database_module.DatabaseUnavailable,
+                       match="did not accept a connection in time"):
         with db.session():
             pass
 

@@ -104,7 +104,7 @@ def test_warning_shown_on_signed_in_pages(sqlite_env, page):
 
 def test_warning_hidden_when_postgres_backs_the_app(sqlite_env, monkeypatch):
     _, user = sqlite_env
-    monkeypatch.setattr(state, "storage_is_durable", lambda: True)
+    monkeypatch.setattr(state, "storage_state", lambda: "postgres")
 
     public = AppTest.from_file(APP, default_timeout=90)
     public.session_state["public_page"] = "Login"

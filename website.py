@@ -12,6 +12,7 @@ import streamlit as st
 import config
 import state
 import ui
+from database.database import DatabaseUnavailable
 
 NAV = ["Home", "Features", "Platform Compatibility", "How It Works",
        "Pricing", "Academy", "Support", "Login", "Register"]
@@ -255,6 +256,12 @@ def page_support() -> None:
 # --------------------------------------------------------------------------- #
 # Authentication
 # --------------------------------------------------------------------------- #
+def _storage_down(exc: Exception, page: str) -> None:
+    """Log the real failure and show a short retry instead of a traceback."""
+    state.log_storage_error(exc)
+    ui.storage_unavailable(f"{page}_storage_retry", f"_mnz_{page}_retry")
+
+
 def page_login() -> None:
     left, right = st.columns([1.15, 1])
     with left:
@@ -265,25 +272,30 @@ def page_login() -> None:
             "account.</p></div>", unsafe_allow_html=True,
         )
         with st.form("login_form"):
-            email = st.text_input("Email", placeholder="you@example.com")
-            password = st.text_input("Password", type="password")
+            email = st.text_input("Email", placeholder="you@example.com", key="login_email")
+            password = st.text_input("Password", type="password", key="login_password")
             submitted = st.form_submit_button("Sign in")
-        if submitted:
-            user, error = state.auth().authenticate(email, password)
-            if error or user is None:
-                st.error(error or "Sign-in failed.")
-                if not state.storage_is_durable():
-                    st.warning(
-                        "This deployment is still on temporary storage, so an account "
-                        "created before the last restart no longer exists and cannot "
-                        "sign in. Register again to get a fresh demo account; accounts "
-                        "only stay permanent once the owner adds the DATABASE_URL secret."
-                    )
+        retry = st.session_state.pop("_mnz_login_retry", False)
+        if submitted or retry:
+            try:
+                user, error = state.auth().authenticate(email, password)
+                token = state.auth().start_session(int(user["id"])) if user and not error else None
+            except DatabaseUnavailable as exc:
+                _storage_down(exc, "login")
             else:
-                token = state.auth().start_session(int(user["id"]))
-                state.sign_in(user, token)
-                st.session_state["mnz_page"] = "Home"
-                st.rerun()
+                if error or user is None:
+                    st.error(error or "Sign-in failed.")
+                    if not state.storage_is_durable():
+                        st.warning(
+                            "This deployment is still on temporary storage, so an account "
+                            "created before the last restart no longer exists and cannot "
+                            "sign in. Register again to get a fresh demo account; accounts "
+                            "only stay permanent once the owner adds the DATABASE_URL secret."
+                        )
+                elif token:
+                    state.sign_in(user, token)
+                    st.session_state["mnz_page"] = "Home"
+                    st.rerun()
         st.caption("No account yet? Use **Register** above.")
     with right:
         st.markdown(
@@ -306,30 +318,40 @@ def page_register() -> None:
             unsafe_allow_html=True,
         )
         with st.form("register_form"):
-            name = st.text_input("Name", placeholder="Your name")
-            email = st.text_input("Email", placeholder="you@example.com")
+            name = st.text_input("Name", placeholder="Your name", key="register_name")
+            email = st.text_input("Email", placeholder="you@example.com", key="register_email")
             password = st.text_input("Password", type="password",
-                                     help="At least 8 characters.")
-            confirm = st.text_input("Confirm password", type="password")
+                                     help="At least 8 characters.", key="register_password")
+            confirm = st.text_input("Confirm password", type="password",
+                                    key="register_confirm")
             accepted = st.checkbox(
-                "I understand MNZ is a demo and educational tool, not financial advice."
+                "I understand MNZ is a demo and educational tool, not financial advice.",
+                key="register_accepted",
             )
             submitted = st.form_submit_button("Create demo account")
-        if submitted:
+        retry = st.session_state.pop("_mnz_register_retry", False)
+        if submitted or retry:
             if not accepted:
                 st.error("Please confirm you understand this is a demo and educational tool.")
             else:
-                user, problems = state.auth().register(name, email, password)
-                if problems:
-                    for problem in problems:
-                        st.error(problem)
-                elif password != confirm:
-                    st.error("The two passwords do not match.")
-                elif user is not None:
-                    token = state.auth().start_session(int(user["id"]))
-                    state.sign_in(user, token)
-                    st.session_state["mnz_page"] = "Home"
-                    st.rerun()
+                try:
+                    user, problems = state.auth().register(name, email, password)
+                    token = (
+                        state.auth().start_session(int(user["id"]))
+                        if user is not None and not problems else None
+                    )
+                except DatabaseUnavailable as exc:
+                    _storage_down(exc, "register")
+                else:
+                    if problems:
+                        for problem in problems:
+                            st.error(problem)
+                    elif password != confirm:
+                        st.error("The two passwords do not match.")
+                    elif user is not None and token:
+                        state.sign_in(user, token)
+                        st.session_state["mnz_page"] = "Home"
+                        st.rerun()
     with right:
         st.markdown(
             '<div class="mnz-card" style="margin-top:2.5rem"><strong>What you get</strong>'
@@ -378,8 +400,13 @@ def render() -> None:
         st.session_state["public_page"] = nav
         st.rerun()
 
-    if page in ("Login", "Register") and not state.storage_is_durable():
-        ui.temporary_storage_notice()
+    if page in ("Login", "Register"):
+        status = state.storage_state()
+        if status == "sqlite":
+            ui.temporary_storage_notice()
+        elif status == "unavailable":
+            # Say it before they type, not only after a failed attempt.
+            ui.storage_unavailable(f"{page.lower()}_storage_retry")
 
     RENDERERS[page]()
 

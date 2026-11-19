@@ -533,6 +533,28 @@ def temporary_storage_notice() -> None:
     )
 
 
+def storage_unavailable(retry_key: str, retry_flag: str | None = None) -> None:
+    """Short, honest message for an unreachable database, with a retry.
+
+    With ``retry_flag`` the button repeats the same form submission (same typed
+    credentials) on the next run. Without it, the click's own rerun is enough to
+    retry the connection.
+    """
+    st.error("Cannot reach the account database right now. It may be waking up.")
+    st.caption(
+        "Nothing was saved and your password was not stored. This usually clears "
+        "in a few seconds — try again."
+    )
+    if not retry_flag:
+        st.button("Retry", key=retry_key, type="secondary")
+        return
+
+    def _request_retry() -> None:
+        st.session_state[retry_flag] = True
+
+    st.button("Retry", key=retry_key, type="secondary", on_click=_request_retry)
+
+
 def empty_state(message: str, hint: str = "") -> None:
     st.markdown(
         f'<div class="mnz-notice warn">{escape(message)}'

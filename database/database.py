@@ -228,6 +228,14 @@ def _row_to_dict(row: Any) -> dict | None:
 # place. SQLite remains the default; Postgres is used only when DATABASE_URL
 # is configured (or a test passes MNZ_TEST_DATABASE_URL).
 # --------------------------------------------------------------------------- #
+class DatabaseUnavailable(RuntimeError):
+    """The configured PostgreSQL database cannot be reached right now.
+
+    Raised for an unreachable host, a suspended compute and a pool timeout —
+    never for a schema or query bug — so the UI can offer a retry.
+    """
+
+
 _PG_POOLS: dict[str, Any] = {}
 _PG_READY: set[str] = set()
 _PG_EFFECTIVE: dict[str, str] = {}
@@ -399,7 +407,7 @@ def _pg_pool(url: str):
                 failure = exc
                 if "channel binding" in str(exc).lower():
                     continue  # try the relaxed candidate
-                raise RuntimeError(
+                raise DatabaseUnavailable(
                     "Could not connect to the PostgreSQL database. "
                     f"Check DATABASE_URL ({exc.__class__.__name__}: {exc})."
                 ) from exc
@@ -407,7 +415,7 @@ def _pg_pool(url: str):
             break
 
         if chosen is None:
-            raise RuntimeError(
+            raise DatabaseUnavailable(
                 "Could not connect to the PostgreSQL database. "
                 f"Check DATABASE_URL ({failure.__class__.__name__}: {failure})."
             ) from failure
@@ -519,7 +527,7 @@ class Database:
                 with _pg_pool(self.url).connection() as conn:
                     yield _PgConnection(conn)
             except PoolTimeout as exc:
-                raise RuntimeError(
+                raise DatabaseUnavailable(
                     "The PostgreSQL database did not accept a connection in time. "
                     "It may be waking up, or DATABASE_URL may be wrong. Try again."
                 ) from exc
@@ -559,8 +567,10 @@ class Database:
             # IF NOT EXISTS, and a failed attempt is rolled back by the pool.
             try:
                 _pg_retry(create)
+            except DatabaseUnavailable:
+                raise  # already readable; do not nest the same message twice
             except Exception as exc:  # noqa: BLE001 - reported below
-                raise RuntimeError(
+                raise DatabaseUnavailable(
                     "PostgreSQL storage could not be prepared. "
                     f"Check DATABASE_URL ({exc.__class__.__name__}: {exc})."
                 ) from exc
