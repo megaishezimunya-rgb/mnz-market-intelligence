@@ -197,8 +197,21 @@ restart on an ephemeral host. Back up either backend on a schedule — for SQLit
 `sqlite3 mnz.db ".backup backup.db"` is safe while the app is running.
 
 The PostgreSQL driver is `psycopg` 3 with a small connection pool (at most four connections per
-process). All queries live in `database/database.py`; the public `Database` interface is
-identical for both backends, so the rest of the app and the test suite are unchanged.
+process). The pool is built for a hosted, serverless-friendly database:
+
+- It **validates each connection before handing it out** and replaces it if the provider closed
+  it, which is what happens when Neon suspends an idle compute. Connections are also recycled
+  every five minutes so a provider idle timeout cannot leave a dead one behind.
+- Only the **pooled** `-pooler` hostname is expected (PgBouncer, transaction mode), so
+  protocol-level prepared statements are disabled there. A direct hostname keeps them.
+- `sslmode` and `channel_binding` from the provider string are passed through unchanged; if a
+  pooler rejects `channel_binding=require`, the app retries once with `prefer` (TLS still
+  required) instead of failing the request.
+- A connect timeout, bounded retries and a bounded wait for a connection mean a cold or
+  unreachable database produces a readable error instead of hanging the login page.
+
+All queries live in `database/database.py`; the public `Database` interface is identical for
+both backends, so the rest of the app and the test suite are unchanged.
 
 ---
 

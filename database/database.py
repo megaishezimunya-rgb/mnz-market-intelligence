@@ -26,6 +26,7 @@ import json
 import re
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
@@ -229,22 +230,149 @@ def _row_to_dict(row: Any) -> dict | None:
 # --------------------------------------------------------------------------- #
 _PG_POOLS: dict[str, Any] = {}
 _PG_READY: set[str] = set()
+_PG_EFFECTIVE: dict[str, str] = {}
 _PG_LOCK = threading.Lock()
+_PG_BUILD_LOCK = threading.Lock()
 _PG_INIT_LOCK = threading.Lock()
+
+# A hosted Postgres (Neon, Supabase, RDS) suspends an idle compute and closes
+# its connections. The pool must hand out a live connection instead of a dead
+# one, so it validates each connection before use, recycles connections before
+# the provider ages them out, and bounds how long a request waits.
+_PG_POOL_TIMEOUT = 20.0      # seconds to wait for a connection from the pool
+_PG_CONNECT_TIMEOUT = 10     # seconds for a single TCP/TLS/auth handshake
+_PG_MAX_LIFETIME = 300.0     # recycle before a provider idle timeout can kill it
+_PG_MAX_IDLE = 120.0
+_PG_ATTEMPTS = 3
 
 
 def _normalise_url(url: str) -> str:
+    """Clean up a pasted connection string without changing its meaning."""
     url = (url or "").strip()
+    if len(url) >= 2 and url[0] == url[-1] and url[0] in "\"'":
+        # People often paste the quoted TOML value from the docs.
+        url = url[1:-1].strip()
     if url.startswith("postgres://"):
         url = "postgresql://" + url[len("postgres://"):]
     return url
 
 
+def _pg_conninfo(url: str) -> str:
+    """Add the options a hosted Postgres needs, keeping the provider's own.
+
+    Neon hands out ``...?sslmode=require&channel_binding=require`` and a
+    ``-pooler`` hostname. Both are preserved exactly as sent; this only fills
+    in a connect timeout and an application name when they are missing, and
+    requires TLS for a Neon host if the string somehow lacks it.
+    """
+    try:
+        from psycopg.conninfo import conninfo_to_dict, make_conninfo
+    except ImportError:  # pragma: no cover - psycopg is in requirements
+        return url
+    try:
+        info = conninfo_to_dict(url)
+    except Exception:
+        # Not parseable by libpq: hand it over untouched so psycopg reports
+        # the real problem instead of a rewritten one.
+        return url
+    info.setdefault("connect_timeout", str(_PG_CONNECT_TIMEOUT))
+    info.setdefault("application_name", "mnz-bot")
+    if (info.get("host") or "").endswith(".neon.tech"):
+        info.setdefault("sslmode", "require")
+    try:
+        return make_conninfo(**info)
+    except Exception:
+        return url
+
+
+def _pg_is_pooled(conninfo: str) -> bool:
+    """True for a PgBouncer endpoint (Neon's pooled ``-pooler`` hostname)."""
+    try:
+        from psycopg.conninfo import conninfo_to_dict
+
+        host = conninfo_to_dict(conninfo).get("host") or ""
+    except Exception:
+        host = conninfo
+    return "-pooler" in host
+
+
+def _pg_candidates(conninfo: str) -> list[str]:
+    """Connection strings to try, strictest first.
+
+    ``channel_binding=require`` fails outright against a pooler or a driver
+    build that cannot negotiate SCRAM channel binding, so the second candidate
+    relaxes it to ``prefer`` while keeping TLS mandatory.
+    """
+    candidates = [conninfo]
+    try:
+        from psycopg.conninfo import conninfo_to_dict, make_conninfo
+
+        info = conninfo_to_dict(conninfo)
+    except Exception:
+        return candidates
+    if info.get("channel_binding") == "require":
+        relaxed = dict(info)
+        relaxed["channel_binding"] = "prefer"
+        try:
+            candidates.append(make_conninfo(**relaxed))
+        except Exception:
+            pass
+    return candidates
+
+
+def _pg_retry(action, *, attempts: int = _PG_ATTEMPTS, base_delay: float = 0.4):
+    """Run ``action`` again on a transient failure, with a short backoff."""
+    last: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return action()
+        except Exception as exc:  # noqa: BLE001 - re-raised below
+            last = exc
+            if attempt < attempts:
+                time.sleep(base_delay * attempt)
+    assert last is not None
+    raise last
+
+
+def _pg_probe(conninfo: str) -> None:
+    """Open and close one connection so config errors surface immediately."""
+    import psycopg
+
+    kwargs: dict[str, Any] = {}
+    if _pg_is_pooled(conninfo):
+        # PgBouncer in transaction mode does not keep a backend session, so
+        # protocol-level prepared statements must stay off.
+        kwargs["prepare_threshold"] = None
+    with psycopg.connect(conninfo, **kwargs):
+        pass
+
+
+def _pg_make_pool(conninfo: str):
+    from psycopg.rows import dict_row
+    from psycopg_pool import ConnectionPool
+
+    kwargs: dict[str, Any] = {"row_factory": dict_row}
+    if _pg_is_pooled(conninfo):
+        kwargs["prepare_threshold"] = None
+    return ConnectionPool(
+        conninfo,
+        min_size=1,
+        max_size=4,
+        open=True,
+        # Validates each connection before it is handed out, which is how a
+        # connection killed by a suspended compute is discarded and replaced.
+        check=ConnectionPool.check_connection,
+        timeout=_PG_POOL_TIMEOUT,
+        reconnect_timeout=_PG_POOL_TIMEOUT,
+        max_lifetime=_PG_MAX_LIFETIME,
+        max_idle=_PG_MAX_IDLE,
+        kwargs=kwargs,
+    )
+
 
 def _pg_pool(url: str):
     try:
-        from psycopg.rows import dict_row
-        from psycopg_pool import ConnectionPool
+        import psycopg_pool  # noqa: F401 - dependency check
     except ImportError as exc:  # pragma: no cover - dependency is in requirements
         raise RuntimeError(
             "PostgreSQL storage requires psycopg[binary,pool]. "
@@ -252,12 +380,42 @@ def _pg_pool(url: str):
         ) from exc
     with _PG_LOCK:
         pool = _PG_POOLS.get(url)
-        if pool is None:
-            pool = ConnectionPool(
-                url, min_size=1, max_size=4, open=True,
-                kwargs={"row_factory": dict_row},
-            )
+    if pool is not None:
+        return pool
+
+    # Building a pool talks to the network, so it happens outside _PG_LOCK.
+    with _PG_BUILD_LOCK:
+        with _PG_LOCK:
+            pool = _PG_POOLS.get(url)
+            if pool is not None:
+                return pool
+
+        chosen = None
+        failure: Exception | None = None
+        for candidate in _pg_candidates(_pg_conninfo(url)):
+            try:
+                _pg_retry(lambda c=candidate: _pg_probe(c))
+            except Exception as exc:  # noqa: BLE001 - reported below
+                failure = exc
+                if "channel binding" in str(exc).lower():
+                    continue  # try the relaxed candidate
+                raise RuntimeError(
+                    "Could not connect to the PostgreSQL database. "
+                    f"Check DATABASE_URL ({exc.__class__.__name__}: {exc})."
+                ) from exc
+            chosen = candidate
+            break
+
+        if chosen is None:
+            raise RuntimeError(
+                "Could not connect to the PostgreSQL database. "
+                f"Check DATABASE_URL ({failure.__class__.__name__}: {failure})."
+            ) from failure
+
+        pool = _pg_make_pool(chosen)
+        with _PG_LOCK:
             _PG_POOLS[url] = pool
+            _PG_EFFECTIVE[url] = chosen
         return pool
 
 
@@ -355,8 +513,16 @@ class Database:
     @contextmanager
     def session(self) -> Iterator[Any]:
         if self.url:
-            with _pg_pool(self.url).connection() as conn:
-                yield _PgConnection(conn)
+            from psycopg_pool import PoolTimeout
+
+            try:
+                with _pg_pool(self.url).connection() as conn:
+                    yield _PgConnection(conn)
+            except PoolTimeout as exc:
+                raise RuntimeError(
+                    "The PostgreSQL database did not accept a connection in time. "
+                    "It may be waking up, or DATABASE_URL may be wrong. Try again."
+                ) from exc
             return
         assert self.path is not None
         conn = sqlite3.connect(self.path, timeout=30.0)
@@ -382,9 +548,22 @@ class Database:
                 ready = self.url in _PG_READY
             if ready:
                 return
-            with _pg_pool(self.url).connection() as conn:
-                _PgConnection(conn).executescript(SCHEMA)
-                self._migrate_postgres(conn)
+
+            def create() -> None:
+                with _pg_pool(self.url).connection() as conn:
+                    _PgConnection(conn).executescript(SCHEMA)
+                    self._migrate_postgres(conn)
+
+            # A suspended compute or a dropped first connection is retried
+            # rather than turned into a login error page. The schema uses
+            # IF NOT EXISTS, and a failed attempt is rolled back by the pool.
+            try:
+                _pg_retry(create)
+            except Exception as exc:  # noqa: BLE001 - reported below
+                raise RuntimeError(
+                    "PostgreSQL storage could not be prepared. "
+                    f"Check DATABASE_URL ({exc.__class__.__name__}: {exc})."
+                ) from exc
             with _PG_LOCK:
                 _PG_READY.add(self.url)
 
