@@ -431,13 +431,15 @@ def build_signal(
 
     if label == BUY:
         summary = (
-            f"Weighted evidence is constructive ({score:+.2f}). The last close is {_fmt(data.last_price)}, "
-            f"with a reference stop at {_fmt(sl)} and simulated target at {_fmt(tp)}."
+            f"Weighted evidence is constructive ({score:+.2f}). The last close is "
+            f"{_level(data.last_price)}, with a reference stop at {_level(sl)} and "
+            f"simulated target at {_level(tp)}."
         )
     elif label == SELL:
         summary = (
-            f"Weighted evidence is defensive ({score:+.2f}). The last close is {_fmt(data.last_price)}, "
-            f"with a reference stop at {_fmt(sl)} and simulated target at {_fmt(tp)}."
+            f"Weighted evidence is defensive ({score:+.2f}). The last close is "
+            f"{_level(data.last_price)}, with a reference stop at {_level(sl)} and "
+            f"simulated target at {_level(tp)}."
         )
     elif snap.bars < config.SIGNAL_MIN_BARS:
         summary = "Not enough history to compute a signal. No direction is assigned."

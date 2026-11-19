@@ -199,6 +199,12 @@ hr { border-color: var(--border) !important; }
 .mnz-signal .v.tp { color: var(--green); }
 .mnz-signal .v.sl { color: var(--red); }
 .mnz-signal .why { font-size: .78rem; color: #C7CEDA; line-height: 1.6; margin-top: .7rem; }
+.mnz-signal .plan {
+  margin-top: .65rem; padding: .45rem .65rem; border-radius: 9px;
+  background: #10141C; border: 1px solid #1E2532;
+  font-size: .74rem; line-height: 1.55; color: #C7CEDA;
+  white-space: normal; overflow-wrap: anywhere;
+}
 .mnz-quality { display: flex; align-items: center; gap: .45rem; margin-top: .7rem; }
 .mnz-quality .bar { flex: 1; height: 5px; background: #1E2532; border-radius: 99px; overflow: hidden; }
 .mnz-quality .bar span { display: block; height: 100%; border-radius: 99px; }
@@ -422,6 +428,11 @@ div[data-testid="stAlert"] { border-radius: 10px; border: 1px solid var(--border
     color: var(--muted); padding-bottom: .2rem;
   }
   .mnz-html-table td.num { text-align: left; }
+  .mnz-html-table td::before {
+    content: attr(data-label) " · "; font-size: .56rem; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .mnz-html-table td:first-child::before { content: none; }
   .mnz-hero h1 { max-width: 100%; }
 }
 
@@ -720,8 +731,7 @@ def _plan_line(plan: dict | None) -> str:
         return ""
     state = plan.get("state")
     tone = {"actionable": GREEN, "expired": "#E7B75B"}.get(state, "#8C93A3")
-    bits = [f'<span style="color:{tone};font-weight:600">{escape(str(plan.get("action") or ""))}'
-            "</span>"]
+    bits = [f'<b style="color:{tone}">{escape(str(plan.get("action") or ""))}</b>']
     expires = plan.get("valid_until")
     if state == "actionable" and expires is not None:
         bits.append(f"valid until {expires:%d %b %H:%M} UTC ({plan.get('countdown')} left)")
@@ -731,7 +741,7 @@ def _plan_line(plan: dict | None) -> str:
         bits.append(escape(str(plan["summary"])))
     if plan.get("risk_reward"):
         bits.append(f"{float(plan['risk_reward']):.1f}:1 reward/risk")
-    return f'<div class="meta">Plan: {" · ".join(bits)}</div>'
+    return f'<div class="plan">Plan: {" · ".join(bits)}</div>'
 
 
 def _evidence_line(row: dict) -> str:
@@ -809,7 +819,8 @@ def html_table(frame: pd.DataFrame, *, columns: list[str] | None = None,
         cells = []
         for col in view.columns:
             css = ' class="num"' if col in numeric_columns else ""
-            cells.append(f"<td{css}>{cell(row[col])}</td>")
+            label = escape(str(col))
+            cells.append(f'<td{css} data-label="{label}">{cell(row[col])}</td>')
         rows.append("<tr>" + "".join(cells) + "</tr>")
     st.markdown(
         f'<div class="mnz-html-table-wrap"><table class="mnz-html-table" '
