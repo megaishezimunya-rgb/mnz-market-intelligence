@@ -158,6 +158,10 @@ def _signal_block(ctx: AssistantContext) -> str:
             f"\n**{confirmations}** indicator component(s) agree with this reading; MNZ requires "
             f"at least **{config.SIGNAL_MIN_CONFIRMATIONS}** before publishing a direction."
         )
+    alignment = (signal.metrics or {}).get("higher_alignment")
+    if alignment and alignment != "unavailable":
+        higher_label = (signal.metrics or {}).get("higher_timeframe") or "higher"
+        lines.append(f"The **{higher_label}** trend is **{alignment}** with it.")
     if ctx.mode == "Professional" and signal.metrics:
         components = signal.metrics.get("components", {})
         weights = signal.metrics.get("weights", {})

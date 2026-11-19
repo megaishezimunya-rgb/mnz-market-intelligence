@@ -291,12 +291,16 @@ def finite(value) -> bool:
 def quote_row(results) -> pd.DataFrame:
     rows = []
     for result in results:
+        metrics = (result.signal.metrics or {}) if result.signal else {}
+        confirmations = metrics.get("confirmations")
         rows.append({
             "Instrument": result.symbol,
             "Name": result.name,
             "Signal": result.label,
             "Strength": result.strength,
             "Quality": result.quality,
+            "Evidence": f"{confirmations}/4" if confirmations else "—",
+            "Higher TF": metrics.get("higher_alignment", "—"),
             "Score": round(result.score, 2),
             "Price": result.price,
             "Change %": round(result.change_pct, 2) if result.change_pct is not None else None,

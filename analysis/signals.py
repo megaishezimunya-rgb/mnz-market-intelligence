@@ -210,6 +210,7 @@ def _quality(
     *,
     confirmations: int = 0,
     adx_weak: bool = False,
+    higher_aligned: bool = False,
 ) -> int:
     agreement = _agreement(components, weights)
     quality = 35 + 40 * agreement + 25 * min(abs(score) / 0.6, 1.0)
@@ -220,6 +221,8 @@ def _quality(
         quality -= 5
     if adx_weak:
         quality -= 8
+    if higher_aligned:
+        quality += 4
     if snap.bars < 120:
         quality -= 8
     if snap.volatility_label == "High":
@@ -256,6 +259,53 @@ def _targets(label: str, price: float, atr_value: float | None) -> tuple[float |
     if label == BUY:
         return round_price(price + distance * (config.SIGNAL_TP_ATR / config.SIGNAL_SL_ATR)), round_price(price - distance)
     return round_price(price - distance * (config.SIGNAL_TP_ATR / config.SIGNAL_SL_ATR)), round_price(price + distance)
+
+
+# One step up from the scanned timeframe, built from the bars already fetched.
+_HIGHER_RULES: dict[str, str | None] = {
+    "M1": "5min", "M5": "30min", "M15": "1h", "M30": "4h",
+    "H1": "1D", "H4": "1D", "D1": "1W",
+}
+_HIGHER_LABELS = {
+    "M1": "M5", "M5": "M30", "M15": "H1", "M30": "H4",
+    "H1": "D1", "H4": "D1", "D1": "W1",
+}
+
+
+def _resample_frame(frame: pd.DataFrame, rule: str) -> pd.DataFrame:
+    """Aggregate the loaded bars to a coarser rule, without another request."""
+    if frame is None or frame.empty:
+        return pd.DataFrame()
+    try:
+        out = frame.resample(rule, label="right", closed="right").agg({
+            "Open": "first", "High": "max", "Low": "min",
+            "Close": "last", "Volume": "sum",
+        })
+    except (TypeError, ValueError):
+        return pd.DataFrame()
+    return out.dropna(subset=["Close"])
+
+
+def _higher_trend(data: PriceData, timeframe: str) -> float:
+    """Trend score of the next timeframe up, or NaN when there is too little."""
+    rule = _HIGHER_RULES.get(timeframe)
+    if not rule:
+        return float("nan")
+    frame = _resample_frame(data.frame, rule)
+    if frame.empty or len(frame) < 30:
+        return float("nan")
+    snap = indicators.snapshot(frame, fast=20, slow=50, long_window=100)
+    return float(snap.trend_score) if _finite(snap.trend_score) else float("nan")
+
+
+def _higher_state(higher_score: float, direction: int) -> str:
+    """``aligned``, ``against``, ``neutral`` or ``unavailable`` for a direction."""
+    if direction == 0 or not _finite(higher_score):
+        return "unavailable" if not _finite(higher_score) else "neutral"
+    value = float(higher_score)
+    if abs(value) < 0.2:
+        return "neutral"
+    return "aligned" if (value > 0) == (direction > 0) else "against"
 
 
 def _fmt(value: float | None, digits: int = 2, suffix: str = "") -> str:
@@ -310,6 +360,8 @@ def build_signal(
     label = WAIT
     direction = 1 if score >= config.SIGNAL_BUY_THRESHOLD else -1 if score <= config.SIGNAL_SELL_THRESHOLD else 0
     supporting, opposing = _confirmations(components, direction)
+    higher_score = _higher_trend(data, timeframe)
+    higher_state = _higher_state(higher_score, direction)
     adx_weak = _finite(snap.adx) and float(snap.adx) < config.SIGNAL_RANGE_ADX
     threshold = max(
         abs(config.SIGNAL_BUY_THRESHOLD),
@@ -329,6 +381,11 @@ def build_signal(
                 f"Only {len(supporting)} indicator component(s) support a {'BUY' if direction > 0 else 'SELL'} "
                 f"reading; {config.SIGNAL_MIN_CONFIRMATIONS} are required, so this is WAIT."
             )
+        elif higher_state == "against":
+            warnings.append(
+                f"The higher timeframe disagrees: its trend score is {higher_score:+.2f} against "
+                f"this {'bullish' if direction > 0 else 'bearish'} reading, so this is WAIT."
+            )
         else:
             label = BUY if direction > 0 else SELL
     elif direction and adx_weak:
@@ -341,6 +398,7 @@ def build_signal(
     quality = _quality(
         snap, data, components, weights, score,
         confirmations=len(supporting), adx_weak=adx_weak,
+        higher_aligned=higher_state == "aligned",
     )
     strength = _strength(label, quality, score)
     tp, sl = _targets(label, float(data.last_price), snap.atr)
@@ -365,6 +423,11 @@ def build_signal(
             + (f" ({', '.join(supporting)})" if supporting else "")
             + (f"; {', '.join(opposing)} disagree." if opposing else ".")
         )
+    if _finite(higher_score):
+        reasons.append(
+            f"The {_HIGHER_LABELS.get(timeframe, 'higher')} trend reads "
+            f"{higher_score:+.2f}, which is {higher_state} with this reading."
+        )
 
     if label == BUY:
         summary = (
@@ -378,11 +441,18 @@ def build_signal(
         )
     elif snap.bars < config.SIGNAL_MIN_BARS:
         summary = "Not enough history to compute a signal. No direction is assigned."
-    elif direction and abs(score) >= threshold:
+    elif direction and abs(score) >= threshold and len(supporting) < config.SIGNAL_MIN_CONFIRMATIONS:
         summary = (
             f"The weighted score is {score:+.2f}, but only {len(supporting)} indicator component(s) "
             f"agree with it. {config.SIGNAL_MIN_CONFIRMATIONS} independent components must agree "
             "before a direction is published, so the reading is WAIT."
+        )
+    elif direction and abs(score) >= threshold:
+        summary = (
+            f"The weighted score is {score:+.2f} on {timeframe}, but the "
+            f"{_HIGHER_LABELS.get(timeframe, 'higher')} trend is leaning the other way "
+            f"({higher_score:+.2f}). MNZ does not publish a signal that fights the higher "
+            "timeframe, so the reading is WAIT."
         )
     elif direction and adx_weak:
         summary = (
@@ -407,6 +477,9 @@ def build_signal(
         "opposing": opposing,
         "threshold": round(threshold, 3),
         "adx_weak": adx_weak,
+        "higher_timeframe": _HIGHER_LABELS.get(timeframe, ""),
+        "higher_trend": round(higher_score, 3) if _finite(higher_score) else None,
+        "higher_alignment": higher_state,
         "bars": snap.bars,
         "rsi": snap.rsi,
         "adx": snap.adx,

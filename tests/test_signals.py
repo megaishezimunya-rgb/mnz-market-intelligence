@@ -179,3 +179,49 @@ def test_a_ranging_market_demands_a_stronger_score(monkeypatch):
     assert signal.label == "WAIT"
     assert signal.metrics["adx_weak"] is True
     assert signal.metrics["threshold"] == pytest.approx(0.99)
+
+
+def test_higher_timeframe_alignment_is_recorded(monkeypatch):
+    from analysis import signals as engine
+
+    monkeypatch.setattr(engine, "_higher_trend", lambda data, timeframe: 0.6)
+    closes = np.linspace(100, 150, 320) + np.sin(np.linspace(0, 30, 320)) * 3
+    signal = build_signal(symbol="TEST", market="forex", timeframe="H1",
+                          data=_data(_frame(closes)), settings=config.StrategySettings())
+    assert signal.label == "BUY"
+    assert signal.metrics["higher_alignment"] == "aligned"
+    assert signal.metrics["higher_timeframe"] == "D1"
+
+
+def test_a_direction_that_fights_the_higher_timeframe_is_wait(monkeypatch):
+    from analysis import signals as engine
+
+    monkeypatch.setattr(engine, "_higher_trend", lambda data, timeframe: -0.9)
+    closes = np.linspace(100, 150, 320) + np.sin(np.linspace(0, 30, 320)) * 3
+    signal = build_signal(symbol="TEST", market="forex", timeframe="H1",
+                          data=_data(_frame(closes)), settings=config.StrategySettings())
+    assert signal.label == "WAIT"
+    assert signal.metrics["higher_alignment"] == "against"
+    assert any("higher timeframe" in warning for warning in signal.warnings)
+
+
+def test_higher_timeframe_trend_is_built_from_the_loaded_bars():
+    from analysis import signals as engine
+
+    closes = np.linspace(100, 200, 420)
+    frame = _frame(closes, freq="D")
+    data = _data(frame, timeframe="D1")
+    weekly = engine._higher_trend(data, "D1")
+    assert np.isfinite(weekly)
+    assert weekly > 0.2
+
+
+def test_evidence_line_reports_recorded_confirmations():
+    import ui
+
+    line = ui._evidence_line({
+        "metrics_json": '{"confirmations": 3, "higher_alignment": "aligned", "higher_timeframe": "D1"}'
+    })
+    assert "3/4 components agree" in line
+    assert "D1 trend aligned" in line
+    assert ui._evidence_line({"metrics_json": "{}"}) == ""

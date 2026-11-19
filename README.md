@@ -96,6 +96,11 @@ BUY  ≥ +0.28      SELL ≤ −0.28      otherwise WAIT
 - **Evidence gate.** A direction is published only when at least **two** indicator components
   point the same way by at least 0.15; one strong reading on its own stays WAIT. When ADX is
   below 18 the market is ranging, so the bar rises to |score| ≥ 0.45.
+- **Higher-timeframe check.** The same loaded bars are resampled one step up (H1 → D1,
+  M15 → H1, D1 → W1) and its trend must not oppose the reading; an opposing higher trend turns
+  the signal into WAIT, an aligned one adds to quality. No extra provider request is made.
+- **Evidence on the card.** Every signal shows how many of the four components agreed, whether
+  the higher timeframe was aligned and whether the market was ranging.
 - **Quality (0–100)** combines component agreement, signal magnitude, bar count, volatility
   regime, confirmation count and freshness. Sample data caps quality at 30.
 - **Strength** is Strong / Moderate / Weak from quality and magnitude.
@@ -266,7 +271,7 @@ Only the newest 50 attempts per account are kept; older rows are pruned on each 
 python -m pytest -q
 ```
 
-Current suite: **151 tests** (149 run by default; the two live PostgreSQL tests are skipped
+Current suite: **156 tests** (154 run by default; the two live PostgreSQL tests are skipped
 unless `MNZ_TEST_DATABASE_URL` is set), covering indicators, backtesting, simulator accounting, engine
 analyst, authentication and data isolation, signal labels/quality/targets/outcomes, scanner
 persistence and alert gating, demo slots and TP/SL, AI grounding, expectancy/breakdowns, stale

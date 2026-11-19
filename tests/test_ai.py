@@ -110,3 +110,15 @@ def test_best_setup_answer_asks_for_a_scan_when_nothing_is_stored():
     answer = ai.answer("What is the best setup?", _context(recent_signals=[]))
     assert "Scan instrument" in answer or "Scan all" in answer
     assert "no stored BUY/SELL" in answer
+
+
+def test_signal_explanation_states_higher_timeframe_agreement():
+    signal = Signal(symbol="EURUSD=X", market="forex", timeframe="H1", label="BUY",
+                    price=1.1, score=0.5, quality=78, strength="Strong",
+                    entry_ref=1.1, tp=1.13, sl=1.08, explanation="Constructive.",
+                    metrics={"confirmations": 3, "higher_alignment": "aligned",
+                             "higher_timeframe": "D1"})
+    answer = ai.answer("Explain the signal", _context(signal=signal))
+    assert "3 of 4" in answer or "**3**" in answer
+    assert "D1" in answer and "aligned" in answer
+    assert "reward-to-risk" in answer

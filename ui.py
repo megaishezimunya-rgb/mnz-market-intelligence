@@ -7,6 +7,7 @@ fixed touch-sized bottom navigation bar (rendered by ``app.py``).
 
 from __future__ import annotations
 
+import json
 from html import escape
 
 import numpy as np
@@ -695,6 +696,7 @@ def signal_card(row: dict, *, name: str = "", explanation: str | None = None,
             "</div>"
         )
     why = explanation if explanation is not None else row.get("explanation", "")
+    evidence = _evidence_line(row)
     quality = quality_bar(int(row.get("quality") or 0)) if show_quality else ""
     st.markdown(
         '<div class="mnz-signal"><div class="top">'
@@ -702,9 +704,35 @@ def signal_card(row: dict, *, name: str = "", explanation: str | None = None,
         f'<span class="name">{escape(name)}</span>{strength_pill(strength)}'
         f'<span class="meta">{meta}</span></div>'
         + (f'<div class="why">{escape(str(why))}</div>' if why else "")
-        + levels + quality + "</div>",
+        + evidence + levels + quality + "</div>",
         unsafe_allow_html=True,
     )
+
+
+def _evidence_line(row: dict) -> str:
+    """How much independent evidence backed this reading, when it was recorded."""
+    metrics = row.get("metrics") if isinstance(row.get("metrics"), dict) else None
+    if metrics is None:
+        try:
+            metrics = json.loads(row.get("metrics_json") or "{}")
+        except (TypeError, ValueError):
+            return ""
+    if not isinstance(metrics, dict):
+        return ""
+    try:
+        confirmations = int(metrics.get("confirmations") or 0)
+    except (TypeError, ValueError):
+        return ""
+    if not confirmations:
+        return ""
+    parts = [f"{confirmations}/4 components agree"]
+    higher = metrics.get("higher_alignment")
+    higher_label = metrics.get("higher_timeframe")
+    if higher and higher != "unavailable":
+        parts.append(f"{higher_label or 'higher'} trend {higher}")
+    if metrics.get("adx_weak"):
+        parts.append("ranging market")
+    return f'<div class="meta">Evidence: {" · ".join(parts)}</div>'
 
 
 # --------------------------------------------------------------------------- #
