@@ -310,6 +310,37 @@ def _risk_block(ctx: AssistantContext) -> str:
     )
 
 
+def _broker_block() -> str:
+    """Broker answer, carrying the licence record from config so it cannot drift.
+
+    "Planned compatibility" describes an integration that does not exist yet. It
+    says nothing about whether the operator behind it may lawfully take client
+    money, so the finding from the Broker page travels with the answer.
+    """
+    lines = [
+        "MNZ has **no broker connection**. MetaTrader 5 and Razor Markets are listed as "
+        "*planned compatibility targets* in **Settings → Platform Compatibility**, and no "
+        "account, balance or connection status is shown for them because none exists.",
+        "The only active data source is the delayed public market feed used for analysis. "
+        "Execution is disabled in this build.",
+    ]
+    razor = next((row for row in config.BROKER_REVIEW if row["name"].startswith("Razor")), None)
+    if razor is not None:
+        lines.append(
+            "**Planned is not an endorsement.** Our licence check on "
+            f"**{razor['name']}** ({razor['claim']}) came back: *{razor['status']}*. "
+            f"{razor['found']}"
+        )
+        lines.append(
+            "The full record — the standard we apply, every entity we checked and how to "
+            "verify a licence yourself on the FSCA register — is in **Settings → Platform "
+            "Compatibility → Broker due diligence**, and on the public site's **Broker** page, "
+            f"dated {config.BROKER_VERIFICATION_DATE}. MNZ earns nothing from any broker and "
+            "carries no referral link or partner code."
+        )
+    return "\n\n".join(lines)
+
+
 # --------------------------------------------------------------------------- #
 # Main entry point
 # --------------------------------------------------------------------------- #
@@ -322,13 +353,7 @@ def answer(question: str, ctx: AssistantContext) -> str:
         return "Ask me about the current instrument, a signal, an indicator, or how the platform works."
 
     if any(word in text for word in ("mt5", "metatrader", "razor", "broker", "connect")):
-        return (
-            "MNZ has **no broker connection**. MetaTrader 5 and Razor Markets are listed as "
-            "*planned compatibility targets* in **Settings → Platform Compatibility**, and no "
-            "account, balance or connection status is shown for them because none exists.\n\n"
-            "The only active data source is the delayed public market feed used for analysis. "
-            "Execution is disabled in this build."
-        )
+        return _broker_block()
 
     if any(word in text for word in ("alert", "notification")):
         return (

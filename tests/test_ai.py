@@ -70,6 +70,26 @@ def test_broker_question_is_honest():
     assert "planned" in answer.lower()
 
 
+def test_broker_question_carries_the_licence_finding():
+    """Naming a planned target must not read as a recommendation of it."""
+    razor = next(row for row in config.BROKER_REVIEW if row["name"].startswith("Razor"))
+    answer = ai.answer("Should I open a Razor Markets account?", _context())
+    assert razor["status"] in answer
+    assert razor["found"] in answer
+    assert razor["claim"] in answer
+    assert "not an endorsement" in answer.lower()
+    assert config.BROKER_VERIFICATION_DATE in answer
+    assert "Broker due diligence" in answer
+    assert "referral link" in answer
+    assert "href" not in answer and "http" not in answer
+
+
+def test_broker_answer_still_refuses_a_connection():
+    answer = ai.answer("Is my broker connected?", _context())
+    assert "no broker connection" in answer.lower()
+    assert "Execution is disabled" in answer
+
+
 def test_demo_answer_labels_everything_virtual():
     answer = ai.answer("How is my demo balance?", _context())
     assert "DEMO" in answer
