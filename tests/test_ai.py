@@ -88,6 +88,22 @@ def test_broker_answer_still_refuses_a_connection():
     answer = ai.answer("Is my broker connected?", _context())
     assert "no broker connection" in answer.lower()
     assert "Execution is disabled" in answer
+    # A bare wiring question must not turn into a licence verdict on a named firm.
+    assert "not an endorsement" not in answer.lower()
+    assert "FSP" not in answer
+
+
+def test_generic_connect_question_skips_the_licence_paragraph():
+    answer = ai.answer("How do I connect my account?", _context())
+    assert "no broker connection" in answer.lower()
+    assert config.BROKER_VERIFICATION_DATE not in answer
+
+
+def test_naming_a_platform_attaches_the_licence_paragraph():
+    for question in ("Is MT5 ready?", "Tell me about Deriv", "Razor Markets licence?"):
+        answer = ai.answer(question, _context())
+        assert "not an endorsement" in answer.lower(), question
+        assert config.BROKER_VERIFICATION_DATE in answer, question
 
 
 def test_demo_answer_labels_everything_virtual():

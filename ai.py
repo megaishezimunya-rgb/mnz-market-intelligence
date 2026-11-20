@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import re
+
 import numpy as np
 
 import config
@@ -310,12 +312,26 @@ def _risk_block(ctx: AssistantContext) -> str:
     )
 
 
-def _broker_block() -> str:
+def _names_a_broker(text: str) -> bool:
+    """True when the question names a specific broker or platform.
+
+    "Connect" on its own asks how the app is wired, not who may hold your money,
+    so the licence paragraph stays out of that answer.
+    """
+    names = {"mt5", "metatrader", "razor", "sithundhi", "rocketx", "deriv"}
+    names.update(
+        row["name"].split("(")[0].split()[0].strip().lower() for row in config.BROKER_REVIEW
+    )
+    # Whole words only: "deriv" must not fire on "derive" or "derivative".
+    return any(re.search(rf"\b{re.escape(name)}\b", text) for name in names if name)
+
+
+def _broker_block(text: str) -> str:
     """Broker answer, carrying the licence record from config so it cannot drift.
 
     "Planned compatibility" describes an integration that does not exist yet. It
     says nothing about whether the operator behind it may lawfully take client
-    money, so the finding from the Broker page travels with the answer.
+    money, so a question that names a broker gets the finding from the Broker page.
     """
     lines = [
         "MNZ has **no broker connection**. MetaTrader 5 and Razor Markets are listed as "
@@ -325,7 +341,7 @@ def _broker_block() -> str:
         "Execution is disabled in this build.",
     ]
     razor = next((row for row in config.BROKER_REVIEW if row["name"].startswith("Razor")), None)
-    if razor is not None:
+    if razor is not None and _names_a_broker(text):
         lines.append(
             "**Planned is not an endorsement.** Our licence check on "
             f"**{razor['name']}** ({razor['claim']}) came back: *{razor['status']}*. "
@@ -352,8 +368,8 @@ def answer(question: str, ctx: AssistantContext) -> str:
     if not text:
         return "Ask me about the current instrument, a signal, an indicator, or how the platform works."
 
-    if any(word in text for word in ("mt5", "metatrader", "razor", "broker", "connect")):
-        return _broker_block()
+    if _names_a_broker(text) or "broker" in text or "connect" in text:
+        return _broker_block(text)
 
     if any(word in text for word in ("alert", "notification")):
         return (
